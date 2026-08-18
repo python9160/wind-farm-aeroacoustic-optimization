@@ -1,0 +1,18 @@
+{
+  "model_name": "Histogram Gradient Boosting",
+  "feature_set_name": "polar_log10_r",
+  "feature_columns": [
+    "v",
+    "log10_r",
+    "cos_theta",
+    "sin_theta"
+  ],
+  "target": "dBA",
+  "test_size": 0.2,
+  "random_state": 42,
+  "test_metrics": {
+    "MAE": 0.09216738678008736,
+    "RMSE": 0.1417277644002823,
+    "R2": 0.9997097720635686
+  }
+}
