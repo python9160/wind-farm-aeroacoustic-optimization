@@ -12,6 +12,45 @@ The overall goal is to avoid running OpenFAST during every GA fitness evaluation
 
 ---
 
+## Table of Contents
+
+- [Installation](#installation)
+  - [Step 1: Install OpenFAST Executables](#step-1-install-openfast-executables)
+  - [Step 2: Install `openfast_toolbox`](#step-2-install-openfast_toolbox)
+  - [Step 3: Configure Jupyter](#step-3-configure-jupyter)
+  - [Step 4: Install Python Dependencies](#step-4-install-python-dependencies)
+  - [Step 5: Check CPU and Parallelization Settings](#step-5-check-cpu-and-parallelization-settings)
+  - [Step 6: Configure the Optimization](#step-6-configure-the-optimization)
+  - [Step 7: Verify the Installation](#step-7-verify-the-installation)
+  - [Step 8: Run the Genetic Algorithm](#step-8-run-the-genetic-algorithm)
+  - [Step 9: Run OpenFAST / FAST.Farm Validation](#step-9-run-openfast--fastfarm-validation)
+  - [Step 10: Review the Results](#step-10-review-the-results)
+  - [Optional: Export the Notebook to Python](#optional-export-the-notebook-to-python)
+- [Project Workflow](#project-workflow)
+  - [1. Aeroacoustic surrogate development](#1-aeroacoustic-surrogate-development)
+  - [2. Genetic Algorithm layout optimization](#2-genetic-algorithm-layout-optimization)
+  - [3. OpenFAST / FAST.Farm validation](#3-openfast--fastfarm-validation)
+- [Repository Structure](#repository-structure)
+- [Wrapper Package](#wrapper-package)
+  - [Utility Groups](#utility-groups)
+- [Important Data Files](#important-data-files)
+  - [`training_data.csv`](#training_datacsv)
+  - [`noise_lookup_table.json`](#noise_lookup_tablejson)
+- [Main Notebooks](#main-notebooks)
+  - [`final_train.ipynb`](#final_trainipynb)
+  - [`GA_with_OpenFAST_validation.ipynb`](#ga_with_openfast_validationipynb)
+- [Fitness Function](#fitness-function)
+  - [Aeroacoustic Aggregation](#aeroacoustic-aggregation)
+- [Aeroacoustic Model Configuration](#aeroacoustic-model-configuration)
+- [OpenFAST Computational Domain](#openfast-computational-domain)
+- [Parallelization](#parallelization)
+- [Requirements](#requirements)
+- [Notes](#notes)
+- [Possible Future Work](#possible-future-work)
+- [Status](#status)
+
+---
+
 ## Installation
 
 ### Step 1: Install OpenFAST Executables
