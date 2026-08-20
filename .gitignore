@@ -34,6 +34,15 @@ Thumbs.db
 temp/
 tmp/
 
+# Report stuff
+report/*
+!report/*.tex
+!report/*.png
+!report/*.jpg
+!report/*.jpeg
+!report/*.pdf
+!report/*.bib
+
 # OpenFAST executables - download separately
 OpenFAST.exe
 FAST.Farm.exe
