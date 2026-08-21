@@ -177,13 +177,16 @@ production and aeroacoustic constraints.
 
 \lipsum[5]
 
-\subsection{FLORIS}
-
-\lipsum[6]
-
 \subsection{OpenFAST and FAST.Farm}
 
 \lipsum[7]
+
+\subsection{Decibels and A-weighting}
+\label{ssec:db_a}
+
+\subsection{FLORIS}
+
+\lipsum[6]
 
 \subsection{Aeroacoustic Modeling}
 
@@ -386,15 +389,15 @@ Once the genetic algorithm reaches its termination criterion, currently defined 
 
 \subsection{Aeroacoustic Surrogate Model}
 
-Repeated OpenFAST AeroAcoustics simulations are computationally impractical within the genetic algorithm, where many candidate layouts must be evaluated across multiple wind conditions during each generation. A machine-learning surrogate was therefore developed to approximate the steady-state A-weighted sound level produced by an individual turbine at an arbitrary receiver location.
+Repeated OpenFAST aeroacoustics simulations are computationally impractical within the genetic algorithm, where many candidate layouts must be evaluated across multiple wind conditions during each generation. A machine-learning surrogate was therefore developed to approximate the steady-state A-weighted sound level produced by an individual turbine at an arbitrary receiver location.
 
-The surrogate was developed from single-turbine OpenFAST AeroAcoustics simulations spanning a range of wind speeds and observer locations. Multiple spatial feature representations and regression algorithms were evaluated to determine the combination that most accurately reproduced the OpenFAST results. The selected model was subsequently vectorized to efficiently predict the individual turbine contributions across all turbines, receivers, and candidate layouts required during optimization.
+The surrogate was developed from single-turbine OpenFAST aeroacoustics simulations spanning a range of wind speeds and observer locations. Multiple spatial feature representations and regression algorithms were evaluated to determine the combination that most accurately reproduced the OpenFAST results. The selected model was subsequently vectorized to efficiently predict the individual turbine contributions across all turbines, receivers, and candidate layouts required during optimization.
 
 The following sections describe the initial stages of the basic interpolator, generation of the training dataset, the feature and model selection procedure, the final surrogate implementation, and the method used to aggregate individual turbine predictions into farm-level receiver sound levels.
 
 \subsubsection{Preliminary Surrogate Designs}
 
-Before developing the machine-learning surrogate, two simpler aeroacoustic prediction approaches were investigated. The first used a simplified analytical relationship between turbine sound-power level, wind speed, and propagation distance. The second incorporated OpenFAST AeroAcoustics results through interpolation over wind speed and observer azimuth. These preliminary approaches helped identify the variables and physical behavior that ultimately needed to be represented directly in the machine-learning surrogate.
+Before developing the machine-learning surrogate, two simpler aeroacoustic prediction approaches were investigated. The first used a simplified analytical relationship between turbine sound-power level, wind speed, and propagation distance. The second incorporated OpenFAST aeroacoustics results through interpolation over wind speed and observer azimuth. These preliminary approaches helped identify the variables and physical behavior that ultimately needed to be represented directly in the machine-learning surrogate.
 
 \paragraph{Simplified Analytical Model.}
 
@@ -822,7 +825,9 @@ The feature representation was not selected independently of the regression mode
 
 \subsubsection{Model Training and Selection}
 
-Seven regression algorithms were evaluated for the aeroacoustic surrogate: Linear Regression, Ridge Regression, Polynomial Ridge Regression, Random Forest, Extra Trees, Histogram Gradient Boosting, and eXtreme Gradient Boosting (XGBoost). These models were selected to provide a range of model complexities, from simple linear baselines to nonlinear ensemble and gradient-boosting methods.
+Seven regression algorithms were evaluated for the aeroacoustic surrogate: Linear Regression, Ridge Regression, Polynomial Ridge Regression, Random Forest, Extra Trees, Histogram Gradient Boosting, and eXtreme Gradient Boosting (XGBoost). These models were selected to provide a range of model complexities, from simple linear baselines to nonlinear ensemble and gradient-boosting methods. The normal Gradient Boosting was not considered due to the amount of rows in the training data. For $\sim$16k rows, XGB and HistGrad would be much more performant.
+
+On that same note, standard Kriging and Gaussian Process Regression (GPR) would also run out of memory. The computational costs of $\mathcal{O}(N^3)$ time and $\mathcal{O}(N^2)$ space complexity would not outweigh the additional benefits of having a complete predictive probability distribution rather than a single point estimate. For around 16k rows, this would require an estimated 4 billion operations and 256 million matrix elements, which would take up $\sim$2 GB of RAM for just one matrix.
 
 Table~\ref{tab:candidate-models} summarizes the candidate regression algorithms.
 
@@ -897,7 +902,7 @@ The final surrogate configuration was selected based on its performance on the h
 
 \subsubsection{Final Surrogate Implementation}
 
-The machine-learning surrogate uses the input feature vector
+From our results, we can see that HistGrad with the \verb|polar_log10_r| feature set performed the best, with the lowest MAE, RMSE, and the highest $R^2$ of all 35 model configurations. Thus, the machine-learning surrogate uses the input feature vector
 
 \begin{equation}
     \mathbf{x}
@@ -928,7 +933,7 @@ where $\hat{L}_{A}$ is the predicted A-weighted sound level.
 \subsubsection{Aeroacoustic Aggregation}
 \label{sssec:aa-aggregation}
 
-Independent turbine noise contributions are combined in the linear acoustic-energy domain:
+As mentioned in Section~\ref{ssec:db_a}, sound is measured on a logarithmic scale, not a linear scale. Thus, all operations on sets of dB readings must be done after converting to a power intermediary, and the output can be converted back to dB. For this reason, independent turbine noise contributions are combined in the linear acoustic-energy domain as such:
 
 \begin{equation}
     L_{\mathrm{total}}
@@ -937,8 +942,11 @@ Independent turbine noise contributions are combined in the linear acoustic-ener
     \left(
         \sum_{i=1}^{N}
         10^{L_i/10}
-    \right).
+    \right),
+    \label{eq:openfast-acoustic-aggregation}
 \end{equation}
+
+modelling the energetic equivalent of the sum operation.
 
 Time-varying sound levels may similarly be reduced using
 
@@ -950,45 +958,643 @@ Time-varying sound levels may similarly be reduced using
         \frac{1}{T}
         \sum_{t=1}^{T}
         10^{L_t/10}
-    \right).
+    \right),
+    \label{eq:openfast-energetic-mean}
 \end{equation}
+
+modelling the energetic equivalent of the mean operation.
 
 \subsection{Genetic Algorithm}
 
-\lipsum[13]
+A genetic algorithm was implemented to optimize the layout of the turbines within the defined farm boundaries. Each candidate was evaluated through FLORIS and the machine-learning surrogate described above. Their outputs were combined with turbine-spacing and boundary constraints to produce a single scalar fitness value used to rank chromosomes.
+
+The optimization was performed over a fixed-size population for a specified number of generations. At each generation, candidate layouts were evaluated across the prescribed weighted wind scenarios before selection, crossover, mutation, immigration, and elitism were applied to construct the subsequent generation. The following sections describe the representation of candidate layouts, fitness calculation, environmental scenarios, and genetic operators used in the optimization.
 
 \subsubsection{Chromosome Representation and Initialization}
 
-\subsubsection{Fitness Function}
-
-The optimization objective can be expressed generally as
+Each chromosome represents a complete candidate wind-farm layout and is stored as an $N \times 2$ matrix, where $N$ is the number of turbines. Each row corresponds to one turbine, while the two columns contain its Cartesian $x$ and $y$ coordinates:
 
 \begin{equation}
-    F =
-    P_{\mathrm{expected}}
-    - C_{\mathrm{spacing}}
-    - C_{\mathrm{noise}}
-    - C_{\mathrm{boundary}},
+\mathbf{C} =
+\begin{bmatrix}
+x_1 & y_1 \\
+x_2 & y_2 \\
+\vdots & \vdots \\
+x_N & y_N
+\end{bmatrix}
+\in \mathbb{R}^{N \times 2}.
+\label{eq:chromosome}
 \end{equation}
 
-where $P_{\mathrm{expected}}$ represents expected farm power and the remaining terms represent constraint penalties.
+The initial population is generated randomly within the rectangular farm boundary. For each turbine, the $x$ and $y$ coordinates are independently sampled from uniform distributions,
 
+\begin{equation}
+x_i \sim \mathcal{U}(X_{\min}, X_{\max}),
+\qquad
+y_i \sim \mathcal{U}(Y_{\min}, Y_{\max}),
+\qquad i=1,\ldots,N.
+\label{eq:initialization}
+\end{equation}
+
+No minimum turbine-spacing constraint is enforced during initialization. Consequently, the initial population may contain layouts in which turbines are positioned closer together than the prescribed minimum spacing. Rather than rejecting or repairing these chromosomes, spacing violations are handled through the fitness function, which penalizes layouts in proportion to the magnitude of the violation. This allows the genetic algorithm to explore the full spatial search domain while progressively favoring layouts that satisfy the spacing requirement.
+
+For this same reason, FLORIS may sometimes warn that two hubs may be too close to eachother. This is simply a by-product of the complete random generations, but does not cause any side effects besides that specific chromosome receiving a massive hit in terms of fitness, both from power lost in wake effects and the explicit $C_{\mathrm{boundary}}$ penalty mentioned below.
 
 \subsubsection{Wind Scenarios}
+\label{ssec:wind-scenarios}
 
-\lipsum[14]
+Wind-farm performance depends strongly on both wind speed and wind direction. Evaluating a candidate layout under a single wind condition could therefore favor a layout that performs well under that particular condition but poorly under other likely operating conditions. To account for this variability, each chromosome is evaluated across a discrete set of weighted wind scenarios.
 
-\subsubsection{Genetic Operators}
+Wind speed and wind direction are each represented by a set of discrete values with corresponding probability weights. The Cartesian product of these distributions forms the complete set of wind scenarios. A scenario $s$ is represented as
 
-\lipsum[14]
+\begin{equation}
+    \mathcal{S}_s =
+    \left(v_s,\phi_s,w_s\right),
+\end{equation}
+
+where $v_s$ is the free-stream wind speed, $\phi_s$ is the meteorological wind direction, and $w_s$ is the probability weight associated with the scenario.
+
+If wind speed $v_i$ has weight $w_i^{(v)}$ and wind direction $\phi_j$ has weight $w_j^{(\phi)}$, the joint scenario weight is calculated as
+
+\begin{equation}
+    w_{ij}
+    =
+    w_i^{(v)} w_j^{(\phi)}.
+    \label{eq:scenario-weight}
+\end{equation}
+
+Assuming the individual wind-speed and wind-direction distributions are normalized,
+
+\begin{equation}
+    \sum_i w_i^{(v)} = 1,
+    \qquad
+    \sum_j w_j^{(\phi)} = 1,
+\end{equation}
+
+the resulting scenario weights also satisfy
+
+\begin{equation}
+    \sum_{s=1}^{S} w_s = 1,
+\end{equation}
+
+where $S$ is the total number of wind scenarios.
+
+Table~\ref{tab:wind-distributions} shows the example scenarios used in testing.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Wind-speed and wind-direction distributions used during
+    optimization.}
+    \label{tab:wind-distributions}
+
+    \begin{tabular}{ccc}
+        \toprule
+        \textbf{Variable} & \textbf{Value} & \textbf{Weight} \\
+        \midrule
+
+        Wind speed & 11.0 m/s & 0.10 \\
+                   & 11.5 m/s & 0.80 \\
+                   & 12.0 m/s & 0.10 \\
+
+        \midrule
+
+        Wind direction & 260.0$^\circ$ & 0.20 \\
+                       & 270.0$^\circ$ & 0.60 \\
+                       & 280.0$^\circ$ & 0.20 \\
+
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsubsection{Fitness Function}
+
+Each chromosome is assigned a scalar fitness value that balances expected farm power production against turbine-spacing, farm-boundary, and aeroacoustic constraints. The optimization objective is expressed as
+
+\begin{equation}
+    F
+    =
+    P_{\mathrm{expected}}
+    -
+    C_{\mathrm{spacing}}
+    -
+    C_{\mathrm{noise}}
+    -
+    C_{\mathrm{boundary}},
+    \label{eq:fitness}
+\end{equation}
+
+where $P_{\mathrm{expected}}$ is the probability-weighted farm power and the remaining terms are penalties applied to constraint violations.
+
+The individual terms are not reduced in the same manner. Power and aeroacoustic behavior depend on the wind scenario and must therefore be evaluated across the complete wind distribution. In contrast, turbine spacing and farm-boundary violations depend only on the chromosome geometry and are consequently calculated once per layout.
 
 
+\paragraph{Expected Farm Power.}
 
+As defined in Section~\ref{ssec:wind-scenarios}, each chromosome is evaluated under $S$ wind scenarios with normalized weights $w_s$.
+
+For a farm containing $N$ turbines, FLORIS first provides the steady-state power $P_{i,s}$ of turbine $i$ under scenario $s$. The total farm power for that scenario is
+
+\begin{equation}
+    P_s
+    =
+    \sum_{i=1}^{N} P_{i,s}.
+    \label{eq:scenario-power}
+\end{equation}
+
+The expected farm power used by the fitness function is then the probability-weighted average across all scenarios,
+
+\begin{equation}
+    P_{\mathrm{expected}}
+    =
+    \sum_{s=1}^{S}
+    w_s P_s.
+    \label{eq:expected-power}
+\end{equation}
+
+
+\paragraph{Turbine-Spacing Penalty.}
+
+Turbine spacing is evaluated directly from the chromosome geometry and is therefore independent of wind scenario. For turbines $i$ and $j$, their planar separation is
+
+\begin{equation}
+    d_{ij}
+    =
+    \sqrt{
+        (x_i-x_j)^2
+        +
+        (y_i-y_j)^2
+    }.
+\end{equation}
+
+The default minimum allowable spacing is three rotor diameters,
+
+\begin{equation}
+    d_{\min} = 3D,
+\end{equation}
+
+where $D$ is the turbine rotor diameter.
+
+Only separations below this threshold are penalized. The total spacing penalty is therefore
+
+\begin{equation}
+    C_{\mathrm{spacing}}
+    =
+    k_{\mathrm{spacing}}
+    \sum_{i<j}
+    \max
+    \left(
+        d_{\min}-d_{ij},
+        0
+    \right),
+    \label{eq:spacing-penalty}
+\end{equation}
+
+where $k_{\mathrm{spacing}}$ is a scaling coefficient that controls the fitness cost of each meter of spacing violation. Each turbine pair is included only once in the summation.
+
+
+\paragraph{Farm-Boundary Penalty.}
+
+A setback distance of
+
+\begin{equation}
+    d_{\mathrm{setback}} = 200~\mathrm{m}
+\end{equation}
+
+is maintained between each turbine and the rectangular farm boundary.
+
+Since the plot is implemented as a simple rectangle, the distances to the four boundaries for turbine $i$ are easily represented by
+
+\begin{equation}
+    \mathbf{b}_i
+    =
+    \begin{bmatrix}
+        x_i-X_{\min} \\
+        X_{\max}-x_i \\
+        y_i-Y_{\min} \\
+        Y_{\max}-y_i
+    \end{bmatrix}.
+\end{equation}
+
+A soft penalty is applied whenever any of these distances falls below the required setback:
+
+\begin{equation}
+    C_{\mathrm{setback}}
+    =
+    k_{\mathrm{setback}}
+    \sum_{i=1}^{N}
+    \sum_{e=1}^{4}
+    \max
+    \left(
+        d_{\mathrm{setback}}-b_{i,e},
+        0
+    \right).
+    \label{eq:setback-penalty}
+\end{equation}
+
+If a turbine lies completely outside the farm boundary, at least one $b_{i,e}$ becomes negative. These cases receive an additional large penalty consisting of a fixed term and a component proportional to the distance outside the boundary,
+
+\begin{equation}
+    C_{\mathrm{OOB}}
+    =
+    \begin{cases}
+        0,
+        & \text{if all } b_{i,e} \geq 0, \\[6pt]
+        k_{\mathrm{flat}}
+        +
+        k_{\mathrm{OOB}}
+        \displaystyle
+        \sum_{b_{i,e}<0}
+        |b_{i,e}|,
+        & \text{otherwise}.
+    \end{cases}
+    \label{eq:oob-penalty}
+\end{equation}
+
+The complete boundary penalty is consequently
+
+\begin{equation}
+    C_{\mathrm{boundary}}
+    =
+    C_{\mathrm{setback}}
+    +
+    C_{\mathrm{OOB}}.
+    \label{eq:boundary-penalty}
+\end{equation}
+
+
+\paragraph{Aeroacoustic Penalty.}
+
+Aeroacoustic behavior is scenario dependent. For every wind scenario, the surrogate predicts the total A-weighted sound level at each of the $M$ boundary receivers. The controlling acoustic value for scenario $s$ is the loudest receiver,
+
+\begin{equation}
+    L_{\max,s}
+    =
+    \max_{m=1,\ldots,M}
+    L_{m,s}.
+    \label{eq:scenario-max-noise}
+\end{equation}
+
+Given an allowable sound-level limit $L_{\mathrm{limit}}$, only values above the limit contribute to the penalty:
+
+\begin{equation}
+    C_{\mathrm{noise},s}
+    =
+    k_{\mathrm{noise}}
+    \max
+    \left(
+        L_{\max,s}
+        -
+        L_{\mathrm{limit}},
+        0
+    \right).
+    \label{eq:scenario-noise-penalty}
+\end{equation}
+
+Two scenario-reduction methods are supported. In the default weighted mode, the final acoustic penalty is the probability-weighted average of the scenario-specific penalties,
+
+\begin{equation}
+    C_{\mathrm{noise}}^{\mathrm{weighted}}
+    =
+    \sum_{s=1}^{S}
+    w_s
+    C_{\mathrm{noise},s}.
+    \label{eq:weighted-noise-penalty}
+\end{equation}
+
+Alternatively, a conservative worst-case mode may be used,
+
+\begin{equation}
+    C_{\mathrm{noise}}^{\mathrm{worst}}
+    =
+    \max_{s=1,\ldots,S}
+    C_{\mathrm{noise},s}.
+    \label{eq:worst-noise-penalty}
+\end{equation}
+
+The selected value of $C_{\mathrm{noise}}$ is then substituted into Equation~\ref{eq:fitness}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Reduction methods used by the fitness-function components.}
+    \label{tab:fitness-reductions}
+
+    \begin{tabularx}{\textwidth}{
+        >{\raggedright\arraybackslash}p{0.20\textwidth}
+        >{\raggedright\arraybackslash}X
+        >{\raggedright\arraybackslash}X
+    }
+        \toprule
+        \textbf{Component}
+        & \textbf{Within-Scenario Reduction}
+        & \textbf{Across-Scenario Reduction} \\
+        \midrule
+
+        Farm power
+        & Sum turbine powers
+        & Probability-weighted average \\
+
+        Aeroacoustics
+        & Energetically aggregate turbines, then take maximum across receivers
+        & Weighted average of violation penalties or worst-case penalty \\
+
+        Turbine spacing
+        & Sum pairwise spacing violations
+        & None; geometry is scenario independent \\
+
+        Farm boundary
+        & Sum setback and out-of-bounds violations
+        & None; geometry is scenario independent \\
+
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsubsection{Selection and Genetic Operators}
+
+A fixed population size of 100 chromosomes is maintained throughout the optimization. After all chromosomes in a generation have been evaluated, the subsequent generation is constructed using a combination of elitism, tournament selection, crossover, mutation, and random immigration. These operators are intended to preserve high-performing solutions while maintaining sufficient population diversity to continue exploring the search space.
+
+\paragraph{Population}
+
+The default population size is
+
+\begin{equation}
+    N_{\mathrm{pop}} = 100.
+\end{equation}
+
+The population size remains constant between generations. Each new generation consists of one preserved elite chromosome, offspring generated through selection and crossover, and newly initialized random immigrants. 
+\paragraph{Elitism}
+
+The highest-fitness chromosome found during the optimization is preserved without modification and inserted directly into the subsequent generation. The current implementation therefore uses an elite count of one, 
+
+\begin{equation}
+    N_{\mathrm{elite}} = 1.
+\end{equation}
+
+This guarantees that the best solution discovered by the genetic algorithm cannot be lost through crossover, mutation, or random replacement. 
+\paragraph{Random Immigration}
+
+To maintain population diversity, a fixed proportion of each new generation is reserved for independently generated random chromosomes. The number of immigrants is calculated from the population size and immigration rate according to
+
+\begin{equation}
+    N_{\mathrm{immigration}}
+    =
+    \left\lfloor
+        r_{\mathrm{immigration}}
+        N_{\mathrm{pop}}
+    \right\rfloor,
+    \label{eq:num-immigrants}
+\end{equation}
+
+where $r_{\mathrm{immigration}}$ is the configured immigration rate. With the default values
+
+\begin{equation}
+    N_{\mathrm{pop}} = 100,
+    \qquad
+    r_{\mathrm{immigration}} = 0.40,
+\end{equation}
+
+the algorithm introduces
+
+\begin{equation}
+    N_{\mathrm{immigration}} = 40
+\end{equation}
+
+new random chromosomes per generation.
+
+These chromosomes are generated using the same uniform initialization procedure defined in Equation~\ref{eq:initialization}. The remaining population capacity, excluding the preserved elite chromosome, is filled with offspring produced through selection, crossover, and possible mutation.
+
+Random immigration continually introduces unexplored layouts into the population, helping preserve genetic diversity and reducing the likelihood of premature convergence around a locally favorable region of the search space.
+
+The complete population of the subsequent generation can therefore be expressed as
+
+\begin{equation}
+    N_{\mathrm{pop}}
+    =
+    N_{\mathrm{elite}}
+    +
+    N_{\mathrm{offspring}}
+    +
+    N_{\mathrm{immigration}}.
+    \label{eq:population-composition}
+\end{equation}
+
+Using the default parameters, the 100 chromosomes in each new generation consist of one preserved elite chromosome, 59 offspring generated through selection and crossover, and 40 randomly initialized immigrants:
+
+\begin{equation}
+    100 = 1 + 59 + 40.
+\end{equation}
+
+\paragraph{Parent Selection and Crossover}
+
+The remaining positions in the new generation are populated by offspring. Parents are selected independently using tournament selection. For each parent, four chromosomes are sampled randomly from the current population,
+
+\begin{equation}
+    N_{\mathrm{tournament}} = 4,
+\end{equation}
+
+and the chromosome with the highest fitness among those four is selected as the parent. This procedure is repeated independently to select a second parent.
+
+Crossover is then performed at the individual coordinate level. Given two parent chromosomes $\mathbf{C}^{(1)}$ and $\mathbf{C}^{(2)}$, a binary mask $\mathbf{M}$ of the same $N\times2$ dimensions is generated, with each element independently sampled as
+
+\begin{equation}
+    M_{ij} \sim \operatorname{Bernoulli}(0.5).
+\end{equation}
+
+The resulting child chromosome is
+
+\begin{equation}
+    C^{(\mathrm{child})}_{ij}
+    =
+    \begin{cases}
+        C^{(1)}_{ij}, & M_{ij}=1,\\
+        C^{(2)}_{ij}, & M_{ij}=0.
+    \end{cases}
+    \label{eq:crossover}
+\end{equation}
+
+Consequently, each $x$ or $y$ coordinate has an equal probability of being inherited from either parent.
+
+\paragraph{Mutation}
+
+Newly generated offspring are additionally subject to mutation with a default probability of
+
+\begin{equation}
+    p_{\mathrm{mutation}} = 0.35.
+\end{equation}
+
+When an offspring chromosome is selected for mutation, a normally distributed displacement is independently added to each of its coordinate values. For chromosome $\mathbf{C}$, mutation can be expressed as
+
+\begin{equation}
+    \mathbf{C}'
+    =
+    \mathbf{C}
+    +
+    \boldsymbol{\epsilon},
+\end{equation}
+
+where
+
+\begin{equation}
+    \epsilon_{ij}
+    \sim
+    \mathcal{N}(0,\sigma_{\mathrm{mutation}}^2).
+\end{equation}
+
+The default mutation spread is
+
+\begin{equation}
+    \sigma_{\mathrm{mutation}} = 100~\mathrm{m}.
+\end{equation}
+
+Thus, mutation produces unbiased random spatial perturbations with a standard deviation of 100~m in both coordinate dimensions. Mutation is applied only to offspring produced through crossover; the elite chromosome and newly generated immigrants are not mutated.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Default genetic-algorithm parameters.}
+    \label{tab:ga-parameters}
+
+    \begin{tabular}{lll}
+        \toprule
+        \textbf{Parameter} & \textbf{Symbol} & \textbf{Default} \\
+        \midrule
+        Population size       & $N_{\mathrm{pop}}$        & 100 \\
+        Elite count           & $N_{\mathrm{elite}}$      & 1 \\
+        Immigration rate      & $r_{\mathrm{immigration}}$ & 0.40 \\
+        Tournament size       & $N_{\mathrm{tournament}}$ & 4 \\
+        Mutation probability  & $p_{\mathrm{mutation}}$   & 0.35 \\
+        Mutation spread       & $\sigma_{\mathrm{mutation}}$ & 100 m \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \subsection{OpenFAST Validation}
+\label{ssec:openfast-validation}
 
-\lipsum[15]
+The genetic algorithm relies on FLORIS and the machine-learning aeroacoustic surrogate to make repeated layout evaluations computationally practical. These approximations allow a large number of candidate layouts and wind scenarios to be evaluated during optimization, but the final optimized layout is additionally evaluated using FAST.Farm and OpenFAST aeroacoustics as a higher-fidelity validation step.
 
+The highest-fitness chromosome produced by the genetic algorithm is evaluated under the same wind scenarios defined in Section~\ref{ssec:wind-scenarios}. For each scenario, the corresponding FAST.Farm simulation is generated and executed, and the resulting aeroacoustic outputs are processed to obtain the steady-state A-weighted sound level at each receiver. These results are then used to recalculate the aeroacoustic component of the fitness function without changing the optimized turbine coordinates.
+
+
+\subsubsection{Wind-Direction Transformation}
+
+Rather than changing the FAST.Farm inflow direction for each wind scenario, the inflow is maintained along a fixed reference direction. The complete turbine and observer geometries are instead rotated by the corresponding wind direction before each simulation. This provides an equivalent relative orientation between the incoming wind, turbines, and acoustic observers while maintaining a consistent inflow orientation within the FAST.Farm simulations.
+
+For a point with original coordinates $(x,y)$, rotation about a reference point $(x_c,y_c)$ by an angle $\theta$ is performed using
+
+\begin{equation}
+\begin{bmatrix}
+x' - x_c \\
+y' - y_c
+\end{bmatrix}
+=
+\begin{bmatrix}
+\cos\theta & -\sin\theta \\
+\sin\theta &  \cos\theta
+\end{bmatrix}
+\begin{bmatrix}
+x - x_c \\
+y - y_c
+\end{bmatrix}.
+\label{eq:openfast-layout-rotation}
+\end{equation}
+
+The same transformation is applied to both turbine and receiver coordinates, preserving their relative geometry. The rotation angle is derived from the meteorological wind direction such that each physical wind scenario is represented with the FAST.Farm inflow maintained at its reference orientation.
+
+
+\subsubsection{Aeroacoustic Post-Processing}
+
+For each wind scenario, the aeroacoustics output from every turbine is read and reduced to its steady-state portion. The first half of each simulation output is discarded to reduce the influence of initialization and transient behavior, leaving the latter half for acoustic validation.
+
+Unlike the preliminary surrogate described previously, which used an arithmetic mean of the logarithmic sound levels, the validation workflow uses an energetic mean to reduce the time-varying A-weighted sound level. For a sequence of $T$ sound levels, this is calculated using Equation~\ref{eq:openfast-energetic-mean}.
+
+Because aeroacoustics is evaluated independently for each turbine, the individual turbine contributions at a common receiver are subsequently combined in the acoustic-energy domain. For $N$ turbines, the mean A-weighted sound levels are aggregated using Equation~\ref{eq:openfast-acoustic-aggregation}, to produce a farm-level A-weighted sound level for each receiver and wind scenario.
+
+\subsubsection{Fitness Recalculation}
+
+Following completion of the FAST.Farm simulations, the fitness of the optimized chromosome is recalculated using the higher-fidelity OpenFAST outputs. Unlike the genetic-algorithm optimization stage, in which FLORIS is used to estimate farm power and the machine-learning surrogate is used to estimate aeroacoustic levels, the validation stage obtains both farm power and aeroacoustic predictions directly from the OpenFAST simulations.
+
+For each wind scenario $s$, the steady-state generator power of each turbine is extracted from the corresponding OpenFAST output file using the \texttt{GenPwr (kW)} channel. To reduce the influence of simulation initialization and transient behavior, only the latter half of the time series is retained. The steady-state power of turbine $i$ under scenario $s$ is calculated as
+
+\begin{equation}
+    \overline{P}_{i,s}^{\mathrm{OF}}
+    =
+    \frac{1}{T}
+    \sum_{t=1}^{T}
+    P_{i,s,t}^{\mathrm{OF}},
+\end{equation}
+
+where $T$ is the number of retained time steps in the steady-state portion of the simulation.
+
+The total OpenFAST farm power for scenario $s$ is then
+
+\begin{equation}
+    P_{s}^{\mathrm{OF}}
+    =
+    \sum_{i=1}^{N}
+    \overline{P}_{i,s}^{\mathrm{OF}},
+    \label{eq:openfast-scenario-power}
+\end{equation}
+
+and the expected farm power is obtained using the same scenario probabilities employed during optimization,
+
+\begin{equation}
+    P_{\mathrm{expected}}^{\mathrm{OF}}
+    =
+    \sum_{s=1}^{S}
+    w_s P_s^{\mathrm{OF}}.
+    \label{eq:openfast-expected-power}
+\end{equation}
+
+The OpenFAST aeroacoustic outputs are processed independently as described previously to obtain the maximum farm-level receiver sound level for each scenario. The corresponding scenario noise penalties are calculated using the same sound-level limit and penalty coefficients as the genetic algorithm,
+
+\begin{equation}
+    C_{\mathrm{noise},s}^{\mathrm{OF}}
+    =
+    k_{\mathrm{noise}}
+    \max
+    \left(
+        L_{\max,s}^{\mathrm{OF}}
+        -
+        L_{\mathrm{limit}},
+        0
+    \right).
+\end{equation}
+
+The scenario-specific noise penalties are then reduced using the same weighted or worst-case method selected during optimization.
+
+The turbine-spacing and boundary penalties are not recalculated from a different model because they depend only on the geometry of the optimized chromosome. The OpenFAST-validated fitness is therefore
+
+\begin{equation}
+    F_{\mathrm{validated}}^{\mathrm{OF}}
+    =
+    P_{\mathrm{expected}}^{\mathrm{OF}}
+    -
+    C_{\mathrm{spacing}}
+    -
+    C_{\mathrm{boundary}}
+    -
+    C_{\mathrm{noise}}^{\mathrm{OF}}.
+    \label{eq:openfast-validated-fitness}
+\end{equation}
+
+This provides a higher-fidelity evaluation of the chromosome selected by the genetic algorithm, since both wake-dependent power production and aeroacoustic behavior are evaluated using the OpenFAST/FAST.Farm simulation framework. The resulting validation comparisons are presented in Section~\ref{ssec:validation-results}.
+
+For diagnostic purposes, an additional surrogate validation basis is also calculated using the OpenFAST-derived power together with the machine-learning surrogate acoustic prediction,
+
+\begin{equation}
+    F_{\mathrm{surrogate,OFpower}}
+    =
+    P_{\mathrm{expected}}^{\mathrm{OF}}
+    -
+    C_{\mathrm{spacing}}
+    -
+    C_{\mathrm{boundary}}
+    -
+    C_{\mathrm{noise}}^{\mathrm{surrogate}}.
+    \label{eq:surrogate-openfast-power-fitness}
+\end{equation}
+
+Because Equations~\ref{eq:openfast-validated-fitness} and \ref{eq:surrogate-openfast-power-fitness} use the same OpenFAST-derived power and geometric penalties, their difference isolates the effect of replacing the surrogate aeroacoustic prediction with the OpenFAST aeroacoustics prediction.
 
 % ============================================================
 % 4. Results
@@ -1031,6 +1637,7 @@ An example results table is shown in Table~\ref{tab:model-performance}.
 
 
 \subsection{OpenFAST Validation}
+\label{ssec:validation-results}
 
 \lipsum[19]
 
