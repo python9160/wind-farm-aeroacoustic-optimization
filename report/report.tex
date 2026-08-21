@@ -37,12 +37,37 @@
 \usepackage{booktabs}
 \usepackage{array}
 
+\usepackage{fancyhdr}
+
+% Header/footer style
+\pagestyle{fancy}
+\fancyhf{} % Clear default header and footer
+
+\renewcommand{\sectionmark}[1]{%
+    \markboth{\thesection\quad #1}{}
+}
+
+% Header contents
+\fancyhead[L]{\nouppercase{\leftmark}}
+\fancyhead[R]{\thepage}
+
+% Horizontal line below header
+\renewcommand{\headrulewidth}{0.4pt}
+
+% No footer line
+\renewcommand{\footrulewidth}{0pt}
+
+% Give the header enough vertical space
+\setlength{\headheight}{14pt}
+
 % ============================================================
 % Document Information
 % ============================================================
 
+\newcommand{\mytitle}{Wind Farm Layout Optimization}
+
 \title{
-    \textbf{Wind Farm Layout Optimization}\\
+    \textbf{\mytitle}\\
     \large Using Aeroacoustic Surrogate Modeling and OpenFAST Validation
 }
 
@@ -68,17 +93,29 @@
 \maketitle
 
 \begin{center}
-    Mentor: Kevin Wyckhoff
+    Mentor: Kevin Wyckhoff\\
+    Dr. Arindam Banerjee
 \end{center}
 
+% No header or page number on title page
 \thispagestyle{empty}
 
 \newpage
 
 
 % ------------------------------------------------------------
+% Front Matter
+% Roman numerals: i, ii, iii, ...
+% ------------------------------------------------------------
+
+\pagenumbering{roman}
+
+
+% ------------------------------------------------------------
 % Abstract
 % ------------------------------------------------------------
+
+\markboth{\mytitle}{}
 
 \begin{abstract}
 
@@ -86,14 +123,26 @@
 
 \end{abstract}
 
+\newpage
+
 
 % ------------------------------------------------------------
 % Table of Contents
 % ------------------------------------------------------------
 
+\markboth{Table of Contents}{}
+
 \tableofcontents
 
 \newpage
+
+
+% ------------------------------------------------------------
+% Main Document
+% Arabic page numbers: 1, 2, 3, ...
+% ------------------------------------------------------------
+
+\pagenumbering{arabic}
 
 
 % ============================================================
@@ -337,35 +386,89 @@ Once the genetic algorithm reaches its termination criterion, currently defined 
 
 \subsection{Aeroacoustic Surrogate Model}
 
+Repeated OpenFAST AeroAcoustics simulations are computationally impractical within the genetic algorithm, where many candidate layouts must be evaluated across multiple wind conditions during each generation. A machine-learning surrogate was therefore developed to approximate the steady-state A-weighted sound level produced by an individual turbine at an arbitrary receiver location.
 
+The surrogate was developed from single-turbine OpenFAST AeroAcoustics simulations spanning a range of wind speeds and observer locations. Multiple spatial feature representations and regression algorithms were evaluated to determine the combination that most accurately reproduced the OpenFAST results. The selected model was subsequently vectorized to efficiently predict the individual turbine contributions across all turbines, receivers, and candidate layouts required during optimization.
 
-\subsubsection{Aeroacoustic Training Data}
+The following sections describe the initial stages of the basic interpolator, generation of the training dataset, the feature and model selection procedure, the final surrogate implementation, and the method used to aggregate individual turbine predictions into farm-level receiver sound levels.
 
-The training data for the aeroacoustic surrogate were generated using
-single-turbine OpenFAST simulations. Because each turbine was simulated
-independently, wake interactions between turbines were not included in
-the training-data generation process. Wake effects are instead accounted
-for later in the optimization workflow using FLORIS, which provides the
-effective wind speed experienced by each turbine.
+\subsubsection{Preliminary Surrogate Designs}
 
-Two primary variables were varied when generating the aeroacoustic
-training data: turbine wind speed and the position of the acoustic
-observer relative to the turbine. The wind-speed range was sampled from
-3.0 to 24.5~m/s in increments of 0.5~m/s,
+Before developing the machine-learning surrogate, two simpler aeroacoustic prediction approaches were investigated. The first used a simplified analytical relationship between turbine sound-power level, wind speed, and propagation distance. The second incorporated OpenFAST AeroAcoustics results through interpolation over wind speed and observer azimuth. These preliminary approaches helped identify the variables and physical behavior that ultimately needed to be represented directly in the machine-learning surrogate.
+
+\paragraph{Simplified Analytical Model.}
+
+The initial model estimated the A-weighted sound-power level of an individual NREL 5~MW turbine as a function of incoming wind speed. A piecewise relationship was assumed in which the turbine produced no acoustic contribution below 3~m/s, increased linearly from 90~dBA to 106~dBA between 3 and 11~m/s, and remained at 106~dBA for wind speeds greater than or equal to 11~m/s. The assumed relationship was
+
+\begin{equation}
+L_w(v) =
+\begin{cases}
+    0, & v < 3, \\[4pt]
+    90 + 2(v-3), & 3 \leq v < 11, \\[4pt]
+    106, & v \geq 11,
+\end{cases}
+\label{eq:initial-sound-power}
+\end{equation}
+
+where $v$ is the incoming wind speed in m/s and $L_w$ is the estimated A-weighted sound-power level.
+
+The sound-pressure level at each receiver was subsequently approximated using
+
+\begin{equation}
+L_p(v,d)
+=
+L_w(v)
+-20\log_{10}(d)
+-8
+-0.005d,
+\label{eq:initial-propagation}
+\end{equation}
+
+where $d$ is the three-dimensional turbine-to-receiver distance. This relationship was adopted as a simplified propagation approximation during early development and should not be interpreted as a complete implementation of an established acoustic propagation standard.
+
+Although computationally inexpensive, this formulation depends only on wind speed and turbine-to-receiver distance. It therefore predicts the same sound level for receivers at equal distances regardless of their azimuth relative to the turbine and incoming wind direction. Examination of OpenFAST aeroacoustics results showed substantial directional variation, indicating that observer azimuth needed to be represented explicitly.
+
+\paragraph{OpenFAST-Based Angular Interpolator.}
+
+To incorporate this directional dependence, a second surrogate was constructed from single-turbine OpenFAST aeroacoustics simulations. Wind speed was varied from 3.0 to 24.5~m/s in increments of 0.5~m/s,
 
 \begin{equation}
     v \in \{3.0, 3.5, 4.0, \ldots, 24.5\},
+    \label{eq:v_range}
 \end{equation}
 
-resulting in 44 distinct wind-speed conditions.
+resulting in 44 distinct wind-speed conditions. For each condition, 32 acoustic observers were uniformly distributed around the turbine at a radius of 200~m.
 
-Observer locations were defined in polar coordinates using radial
-distance $r$ and azimuth angle $\theta$. Twenty radial distances were
-generated using logarithmic spacing between 100 and 1000~m. A reference
-radius of 200~m was additionally included to provide a higher-resolution
-angular sampling at a representative observer distance. Each of the
-logarithmically spaced radii was evaluated at 16 azimuth angles, while
-the 200~m reference radius was evaluated at 32 azimuth angles.
+The latter half of each aeroacoustics output time series was retained to approximate steady-state operation. An arithmetic mean of the A-weighted sound levels over this interval was then calculated for each observer. The resulting values were stored in \texttt{noise\_lookup\_table.json}, forming a two-dimensional lookup table parameterized by wind speed $v$ and observer azimuth $\theta$.
+
+A coordinate transformation was required when coupling this dataset with FLORIS because FLORIS specifies wind direction using the meteorological ``direction from which the wind originates'' convention, whereas the aeroacoustic lookup requires the corresponding Cartesian source-relative direction. The conversion used in the implementation was
+
+\begin{equation}
+    \theta_{\mathrm{src}}
+    =
+    \left(90^\circ-\phi_{\mathrm{met}}\right)
+    \frac{\pi}{180^\circ},
+    \label{eq:wind-direction-conversion}
+\end{equation}
+
+where $\phi_{\mathrm{met}}$ is the meteorological wind direction and $\theta_{\mathrm{src}}$ is the corresponding Cartesian angle in radians.
+
+The resulting OpenFAST data were interpolated over wind speed and azimuth using a linear \texttt{RegularGridInterpolator}. For receiver locations away from the 200~m reference radius, distance dependence was still approximated analytically using logarithmic geometric spreading and the constant 0.005~dBA/m attenuation coefficient.
+
+This approach captured the strong directional variation absent from the initial analytical model, but the remaining analytical distance correction introduced another limitation. Comparison with additional OpenFAST simulations at varying observer distances showed that a single constant attenuation coefficient did not reproduce the distance-dependent behavior consistently across all observer azimuths and wind speeds. In some conditions the correction overestimated attenuation, while in others it underestimated it.
+
+These observations motivated the final data-driven approach. Rather than interpolating only over wind speed and azimuth while prescribing the distance dependence analytically, the subsequent surrogate was trained to learn the joint relationship between wind speed, observer distance,
+observer direction, and A-weighted sound level directly from OpenFAST aeroacoustics data. A larger, homogeneous dataset was therefore generated for machine-learning model development, as described in the following sections.
+
+It should be noted that this preliminary implementation averaged decibel values directly in the logarithmic domain. The later OpenFAST validation methodology instead uses energetic averaging, as described in Section~\ref{sssec:aa-aggregation}.
+
+\subsubsection{Aeroacoustic Training Data}
+
+The training data for the aeroacoustic surrogate were generated using single-turbine OpenFAST simulations. Because each turbine was simulated independently, wake interactions between turbines were not included in the training-data generation process. Wake effects are instead accounted for later in the optimization workflow using FLORIS, which provides the effective wind speed experienced by each turbine.
+
+Two primary variables were varied when generating the aeroacoustic training data: turbine wind speed and the position of the acoustic observer relative to the turbine. The wind-speed range was the same as Set (\ref{eq:v_range}).
+
+Observer locations were defined in polar coordinates using radial distance $r$ and azimuth angle $\theta$. Twenty radial distances were generated using logarithmic spacing between 100 and 1000~m. The reference radius of 200~m was additionally included from the previous surrogate iterations to provide a higher-resolution angular sampling at a representative observer distance. Each of the logarithmically spaced radii was evaluated at 16 azimuth angles, while the 200~m reference radius was already evaluated at 32 azimuth angles.
 
 The resulting observer sampling therefore contained
 
@@ -373,8 +476,7 @@ The resulting observer sampling therefore contained
     (20 \times 16) + 32 = 352
 \end{equation}
 
-observer positions. Combining these positions with the 44 wind-speed
-conditions produced a total of
+observer positions. Combining these positions with the 44 wind-speed conditions produced a total of
 
 \begin{equation}
     N_{\mathrm{samples}}
@@ -634,16 +736,9 @@ Table~\ref{tab:aa-training-data} summarizes the sampling strategy.
 
 \subsubsection{Candidate Feature Representations}
 
-The data generated from the OpenFAST simulations initially contained
-three input variables: wind speed $v$, relative observer coordinate $X$,
-and relative observer coordinate $Y$. Although the Cartesian coordinates
-fully describe the observer location, the aeroacoustic field exhibits a
-strong radial and directional structure. Several alternative feature
-representations were therefore evaluated to make this underlying geometry
-more explicit to the machine-learning models.
+The data generated from the OpenFAST simulations initially contained three input variables: wind speed $v$, relative observer coordinate $X$, and relative observer coordinate $Y$. Although the Cartesian coordinates fully describe the observer location, the aeroacoustic field exhibits a strong radial and directional structure. Several alternative feature representations were therefore evaluated to make this underlying geometry more explicit to the machine-learning models.
 
-The relative Cartesian coordinates were first transformed into polar
-coordinates according to
+The relative Cartesian coordinates were first transformed into polar coordinates according to
 
 \begin{equation}
     r = \sqrt{X^2 + Y^2},
@@ -655,11 +750,7 @@ and
     \theta = \operatorname{atan2}(Y,X).
 \end{equation}
 
-Directly using $\theta$ as a numerical feature introduces an artificial
-discontinuity at the angular boundary. For example, directions immediately
-below $2\pi$ and immediately above $0$ are physically adjacent but
-numerically distant. To preserve the periodic nature of the observer
-azimuth, the angular coordinate was therefore encoded using
+Directly using $\theta$ as a numerical feature introduces an artificial discontinuity at the angular boundary. For example, directions immediately below $2\pi$ and immediately above $0$ are physically adjacent but numerically distant. To preserve the periodic nature of the observer azimuth, the angular coordinate was therefore encoded using
 
 \begin{equation}
     c_{\theta} = \cos(\theta),
@@ -667,17 +758,13 @@ azimuth, the angular coordinate was therefore encoded using
     s_{\theta} = \sin(\theta).
 \end{equation}
 
-Distance was also represented using several transformations. Under
-geometric spreading, acoustic intensity decreases with increasing
-distance, while sound-pressure level is expressed on a logarithmic scale.
-A logarithmic transformation of the observer distance,
+Distance was also represented using several transformations. Under geometric spreading, acoustic intensity decreases with increasing distance, while sound-pressure level is expressed on a logarithmic scale. A logarithmic transformation of the observer distance,
 
 \begin{equation}
     r_{\log} = \log_{10}(r),
 \end{equation}
 
-was therefore evaluated as a candidate feature. Reciprocal distance terms
-were additionally considered,
+was therefore evaluated as a candidate feature. Reciprocal distance terms were additionally considered,
 
 \begin{equation}
     r^{-1} = \frac{1}{r},
@@ -685,14 +772,9 @@ were additionally considered,
     r^{-2} = \frac{1}{r^2},
 \end{equation}
 
-to determine whether explicitly representing distance-decay relationships
-improved predictive performance.
+to determine whether explicitly representing distance-decay relationships improved predictive performance.
 
-Rather than selecting one representation a priori, five candidate feature
-sets were constructed and evaluated with each candidate machine-learning
-model. These feature sets are summarized in
-Table~\ref{tab:feature-sets}. The complete set of original and engineered
-features is retained in \texttt{training\_data.csv}.
+Rather than selecting one representation a priori, five candidate feature sets were constructed and evaluated with each candidate machine-learning model. These feature sets are summarized in Table~\ref{tab:feature-sets}. The complete set of original and engineered features is retained in \texttt{training\_data.csv}.
 
 \begin{table}[htbp]
     \centering
@@ -736,15 +818,82 @@ features is retained in \texttt{training\_data.csv}.
     \end{tabularx}
 \end{table}
 
-The feature representation was not selected independently of the
-regression model. Instead, each candidate machine-learning algorithm was
-trained and evaluated using all five feature sets. The final combination
-of model architecture and feature representation was selected based on
-predictive performance, as described in the following section.
+The feature representation was not selected independently of the regression model. Instead, each candidate machine-learning algorithm was trained and evaluated using all five feature sets. The final combination of model architecture and feature representation was selected based on predictive performance, as described in the following section.
 
 \subsubsection{Model Training and Selection}
 
-\lipsum[12]
+Seven regression algorithms were evaluated for the aeroacoustic surrogate: Linear Regression, Ridge Regression, Polynomial Ridge Regression, Random Forest, Extra Trees, Histogram Gradient Boosting, and eXtreme Gradient Boosting (XGBoost). These models were selected to provide a range of model complexities, from simple linear baselines to nonlinear ensemble and gradient-boosting methods.
+
+Table~\ref{tab:candidate-models} summarizes the candidate regression algorithms.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Candidate regression algorithms evaluated for the
+    aeroacoustic surrogate.}
+    \label{tab:candidate-models}
+
+    \begin{tabularx}{\textwidth}{
+        >{\raggedright\arraybackslash}p{0.28\textwidth}
+        >{\raggedright\arraybackslash}p{0.22\textwidth}
+        >{\raggedright\arraybackslash}X
+    }
+        \toprule
+        \textbf{Model} &
+        \textbf{Model Type} &
+        \textbf{Role in Comparison} \\
+        \midrule
+
+        Linear Regression
+        & Linear
+        & Simple baseline model. \\
+
+        Ridge Regression
+        & Regularized linear
+        & Linear model with $L_2$ regularization applied. \\
+
+        Polynomial Ridge
+        & Nonlinear polynomial
+        & Higher-degree polynomial model with $L_2$ to avoid overfitting. \\
+
+        Random Forest
+        & Tree ensemble
+        & Nonlinear ensemble based on averaging predictions from
+          multiple decision trees. \\
+
+        Extra Trees
+        & Tree ensemble
+        & Highly randomized tree ensemble providing an alternative
+          to Random Forest. \\
+
+        Histogram Gradient Boosting
+        & Gradient boosting
+        & Nonlinear boosted-tree model designed for efficient
+          regression on continuous data. \\
+
+        XGBoost
+        & Gradient boosting
+        & Alternative gradient-boosted tree implementation used to
+          compare performance with Histogram Gradient Boosting. \\
+
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+Model architecture and feature representation were evaluated jointly. Each of the seven regression algorithms was trained using each of the five feature representations described in Table~\ref{tab:feature-sets}, resulting in
+
+\begin{equation}
+    N_{\mathrm{configurations}}
+    = 7 \times 5
+    = 35
+\end{equation}
+
+candidate model configurations.
+
+The dataset was divided into training and testing subsets using an 80/20 split. The same split was used for all model and feature-set combinations to provide a consistent basis for comparison.
+
+Predictive performance was evaluated primarily using mean absolute error (MAE) and root mean squared error (RMSE), between the A-weighted sound level obtained from OpenFAST aeroacoustics, $L_i$, and the corresponding surrogate prediction $\hat{L}_i$. The coefficient of determination, $R^2$, was also calculated as an additional measure of model fit.
+
+The final surrogate configuration was selected based on its performance on the held-out test data. The comparative results of the 35 candidate configurations are presented in Section~\ref{sec:surrogate-results}.
 
 \subsubsection{Final Surrogate Implementation}
 
@@ -754,9 +903,9 @@ The machine-learning surrogate uses the input feature vector
     \mathbf{x}
     =
     \begin{bmatrix}
-        v &
-        \log_{10}(r) &
-        \cos(\theta) &
+        v,\, &
+        \log_{10}(r),\, &
+        \cos(\theta),\, &
         \sin(\theta)
     \end{bmatrix}.
 \end{equation}
@@ -777,9 +926,9 @@ The surrogate then approximates the relationship
 where $\hat{L}_{A}$ is the predicted A-weighted sound level.
 
 \subsubsection{Aeroacoustic Aggregation}
+\label{sssec:aa-aggregation}
 
-Independent turbine noise contributions are combined in the
-linear acoustic-energy domain:
+Independent turbine noise contributions are combined in the linear acoustic-energy domain:
 
 \begin{equation}
     L_{\mathrm{total}}
@@ -822,8 +971,7 @@ The optimization objective can be expressed generally as
     - C_{\mathrm{boundary}},
 \end{equation}
 
-where $P_{\mathrm{expected}}$ represents expected farm power and
-the remaining terms represent constraint penalties.
+where $P_{\mathrm{expected}}$ represents expected farm power and the remaining terms represent constraint penalties.
 
 
 \subsubsection{Wind Scenarios}
@@ -849,11 +997,11 @@ the remaining terms represent constraint penalties.
 \section{Results}
 
 \subsection{Surrogate Model Performance}
+\label{sec:surrogate-results}
 
 \lipsum[16]
 
-An example results table is shown in
-Table~\ref{tab:model-performance}.
+An example results table is shown in Table~\ref{tab:model-performance}.
 
 \begin{table}[htbp]
     \centering
