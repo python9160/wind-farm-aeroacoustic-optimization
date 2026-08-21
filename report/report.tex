@@ -159,13 +159,19 @@
 
 \subsection{Research Objective}
 
-The primary objective of this work is to investigate whether
-a computationally efficient surrogate-based optimization framework
-can be used to optimize wind farm layouts subject to both power
-production and aeroacoustic constraints.
+The main objective of this study is to develop and evaulate a computational framework for wind-farm layout optimization that considers not just power production, but also aeroacoustic constraints. The framework is designed to use computationally efficient models during optimization while also including a higher-fidelity OpenFAST/FAST.Farm simulation for final validation.
 
-\lipsum[4]
+More specifically, this study aims to:
 
+\begin{enumerate}
+    \item develop a machine-learning surrogate capable of approximating single-turbine OpenFAST aeroacoustics predictions;
+
+    \item integrate the aeroacoustic surrogate with FLORIS and a genetic algorithm to optimize turbine placement across multiple wind conditions;
+
+    \item account for turbine-spacing, farm-boundary, and aeroacoustic constraints during layout optimization; and
+
+    \item validate the resulting optimized layout using FAST.Farm and OpenFAST, including both farm power production and aeroacoustic performance.
+\end{enumerate}
 
 % ============================================================
 % 2. Background
@@ -173,28 +179,182 @@ production and aeroacoustic constraints.
 
 \section{Background}
 
+
+% ------------------------------------------------------------
+% 2.1 Wind Farm Layout Optimization
+% ------------------------------------------------------------
+
 \subsection{Wind Farm Layout Optimization}
 
-\lipsum[5]
+Wind-farm layout optimization (WFLO) concerns the placement of turbines within a specified spatial domain to improve one or more measures of farm performance while satisfying geometric, operational, and environmental constraints.
+
+A primary consideration in WFLO is the interaction between turbines through their wakes. As a wind turbine extracts energy from the incoming flow, it produces a downstream region of reduced wind speed and increased turbulence. A downstream turbine operating within this wake therefore experiences different inflow conditions than a turbine exposed to the undisturbed free stream, which can reduce its power production.
+
+Wake interactions are also dependent on wind direction. Turbines that are well separated perpendicular to one inflow direction may become aligned when the wind direction changes. Similarly, changes in wind speed affect both turbine operating conditions and wake behavior. Consequently, the performance of a candidate layout generally cannot be characterized by a single wind condition and must instead be considered across a representative set or distribution of environmental conditions.
+
+WFLO is additionally subject to spatial constraints. These may include minimum separation between turbines, restrictions imposed by the available farm area, and setbacks from property or site boundaries. Environmental constraints can introduce further limitations on otherwise favorable turbine locations. Of particular relevance to this study is aeroacoustic noise, since changing turbine locations alters the distance and direction between individual turbines and surrounding acoustic receivers.
+
+The combination of wake interactions, changing environmental conditions, and spatial constraints produces a complex optimization problem. Evaluating large numbers of candidate layouts can become particularly computationally expensive when higher-fidelity turbine and wake simulations are required. For this reason, wind-farm layout optimization can benefit from lower-cost models and optimization techniques capable of efficiently exploring a large spatial search domain.
+% ------------------------------------------------------------
+% 2.2 OpenFAST and FAST.Farm
+% ------------------------------------------------------------
 
 \subsection{OpenFAST and FAST.Farm}
 
-\lipsum[7]
+% OpenFAST
+% - What OpenFAST is
+% - NREL-developed wind-turbine simulation framework
+% - Individual turbine simulation
+% - Relevant modules used in this project:
+%       AeroDyn
+%       AeroAcoustics
+% - Ability to calculate quantities such as generator power
+%
+% FAST.Farm
+% - Extension/framework for wind-farm simulations
+% - Multiple OpenFAST turbine instances
+% - Wake interactions between turbines
+% - Why it provides higher-fidelity validation for this project
+%
+% Do NOT describe your exact validation procedure here.
+% That belongs in Methodology.
 
-\subsection{Decibels and A-weighting}
-\label{ssec:db_a}
+
+% ------------------------------------------------------------
+% 2.3 FLORIS
+% ------------------------------------------------------------
 
 \subsection{FLORIS}
 
-\lipsum[6]
+% - What FLORIS is
+% - Reduced-order wind-farm wake modeling
+% - Effective/waked turbine wind speeds
+% - Farm/turbine power prediction
+% - Much lower computational cost than FAST.Farm
+% - Why reduced-order models are useful for optimization
+%
+% Don't discuss your exact parallel implementation or GA usage yet.
+
+
+% ------------------------------------------------------------
+% 2.4 Aeroacoustic Modeling
+% ------------------------------------------------------------
+
+\subsection{NREL 5-MW Reference Wind Turbine}
+
+The NREL 5-MW Reference Wind Turbine is a hypothetical, standardized 5-MW baseline turbine developed by the National Renewable Energy Laboratory (NREL), now known as the National Laboratory of the Rockies (NLR), primarily to support offshore wind-energy research and the development and comparison of wind-turbine simulation tools.
+
+Although originally developed for offshore system research, the reference model also includes a onshore configuration. The fundamental turbine design is retained across these configurations, while the support structure is adapted for different applications. The onshore configuration uses a tower cantilevered directly to a concrete foundation, whereas offshore configurations have been developed using support structures such as monopiles, space frames, and floating platforms.
+
+The reference turbine is a three-bladed, upwind, variable-speed, collective-pitch machine with a rated power of 5~MW, a rotor diameter of 126~m, and a hub height of 90~m. Selected properties relevant to this study are summarized in Table~\ref{tab:nrel-5mw}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Selected properties of the NREL 5-MW Reference Wind Turbine.}
+    \label{tab:nrel-5mw}
+
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Property} & \textbf{Value} \\
+        \midrule
+        Rated power       & 5 MW \\
+        Rotor orientation & Upwind \\
+        Number of blades  & 3 \\
+        Rotor diameter    & 126 m \\
+        Hub height        & 90 m \\
+        Cut-in wind speed & 3 m/s \\
+        Rated wind speed  & 11.4 m/s \\
+        Cut-out wind speed & 25 m/s \\
+        Control           & Variable speed, collective pitch \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The onshore configuration was selected because this study considers aeroacoustic constraints within a comparatively compact terrestrial wind farm. The optimization domain spans only 3~km, placing potential acoustic receivers at distances where turbine noise can directly influence layout selection. In contrast, utility-scale offshore wind farms may be located many kilometers from populated shoreline receptors, making community aeroacoustic constraints less directly influential on turbine placement within the farm. The onshore configuration therefore provides a more appropriate setting for investigating the tradeoff between wake-dependent power production, turbine placement, and aeroacoustic constraints.
 
 \subsection{Aeroacoustic Modeling}
 
-\lipsum[8]
+% General sources of wind-turbine aerodynamic noise
+% - Blade-generated aerodynamic noise
+% - Dependence on wind speed
+% - Dependence on observer position/direction
+% - Sound propagation with distance
+%
+% OpenFAST AeroDyn AeroAcoustics
+% - What the AeroAcoustics module predicts
+% - Observers
+% - Relevant outputs
+% - Possibly briefly introduce Amiet/turbulent-inflow noise
+%
+% Keep TIMod=1 vs TIMod=2 choice in Methodology, not here.
+
+
+% ------------------------------------------------------------
+% 2.5 Decibels and A-Weighting
+% ------------------------------------------------------------
+
+\subsection{Decibels and A-Weighting}
+\label{ssec:db_a}
+
+% - Sound pressure level and logarithmic dB scale
+% - Why dB values cannot simply be added arithmetically
+% - A-weighting and dBA
+% - Why A-weighting is useful for human-perceived environmental noise
+%
+% Important equations worth introducing here:
+%
+%   L = 10 log10(I/I0)
+%
+% Energetic combination:
+%
+%   L_total = 10 log10(sum_i 10^(L_i/10))
+%
+% Equivalent/energetic mean:
+%
+%   L_eq = 10 log10((1/N) sum_i 10^(L_i/10))
+%
+% Then Methodology can reference this section instead of
+% re-explaining why energetic aggregation is required.
+
+
+% ------------------------------------------------------------
+% 2.6 Surrogate Modeling
+% ------------------------------------------------------------
+
+\subsection{Surrogate Modeling}
+
+% I WOULD ADD THIS SECTION.
+%
+% - What a surrogate model is
+% - Replacing expensive simulations with inexpensive approximations
+% - Training from higher-fidelity simulation data
+% - Inputs -> surrogate -> predicted response
+% - Accuracy vs computational-cost tradeoff
+% - Why surrogate models are useful when an optimizer needs
+%   thousands/millions of evaluations
+%
+% Don't discuss your 15,488 samples, feature sets, or winning ML model.
+% Those are Methodology/Results.
+
+
+% ------------------------------------------------------------
+% 2.7 Genetic Algorithms
+% ------------------------------------------------------------
 
 \subsection{Genetic Algorithms}
 
-\lipsum[9]
+% - Population-based, derivative-free optimization
+% - Chromosomes / candidate solutions
+% - Fitness
+% - Selection
+% - Crossover
+% - Mutation
+% - Elitism
+% - Exploration vs exploitation
+% - Why GAs are suitable for complex wind-farm layout problems
+%
+% Keep YOUR population=100, mutation=0.35, immigration=0.40,
+% etc. in Methodology.
 
 
 % ============================================================
@@ -401,7 +561,7 @@ Before developing the machine-learning surrogate, two simpler aeroacoustic predi
 
 \paragraph{Simplified Analytical Model.}
 
-The initial model estimated the A-weighted sound-power level of an individual NREL 5~MW turbine as a function of incoming wind speed. A piecewise relationship was assumed in which the turbine produced no acoustic contribution below 3~m/s, increased linearly from 90~dBA to 106~dBA between 3 and 11~m/s, and remained at 106~dBA for wind speeds greater than or equal to 11~m/s. The assumed relationship was
+The initial model estimated the A-weighted sound-power level of an individual NREL 5~MW turbine as a function of incoming wind speed. A piecewise relationship was assumed in which the turbine produced no acoustic contribution below 3~m/s, increased linearly from 90~dBA to 106~dBA between 3 and 11~m/s, and remained at 106~dBA for wind speeds greater than or equal to 11~m/s, directly following from the specifications in Table~\ref{tab:nrel-5mw}. The assumed relationship was
 
 \begin{equation}
 L_w(v) =
@@ -440,7 +600,7 @@ To incorporate this directional dependence, a second surrogate was constructed f
     \label{eq:v_range}
 \end{equation}
 
-resulting in 44 distinct wind-speed conditions. For each condition, 32 acoustic observers were uniformly distributed around the turbine at a radius of 200~m.
+resulting in 44 distinct wind-speed conditions, following from the cut-in and cut-out speeds in Table~\ref{tab:nrel-5mw}. For each condition, 32 acoustic observers were uniformly distributed around the turbine at a radius of 200~m.
 
 The latter half of each aeroacoustics output time series was retained to approximate steady-state operation. An arithmetic mean of the A-weighted sound levels over this interval was then calculated for each observer. The resulting values were stored in \texttt{noise\_lookup\_table.json}, forming a two-dimensional lookup table parameterized by wind speed $v$ and observer azimuth $\theta$.
 
