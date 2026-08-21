@@ -113,12 +113,13 @@ scikit-learn
 tqdm
 joblib
 floris
+xgboost
 ```
 
 They can be installed or updated together with:
 
 ```bash
-pip install -U numpy pandas matplotlib scipy scikit-learn tqdm joblib floris
+pip install -U numpy pandas matplotlib scipy scikit-learn tqdm joblib floris xgboost
 ```
 
 Make sure these packages are installed in the same Python environment used by the Jupyter kernel and `openfast_toolbox`.

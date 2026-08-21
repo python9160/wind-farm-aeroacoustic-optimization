@@ -61,6 +61,7 @@ REQUIRED_PACKAGES = [
     "tqdm",
     "joblib",
     "floris",
+    "xgboost",
 ]
 
 # openfast_toolbox may be installed differently depending on
