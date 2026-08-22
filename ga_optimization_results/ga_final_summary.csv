@@ -1,0 +1,2 @@
+best_fitness,best_expected_power_kw,best_worst_noise_dba,spacing_penalty,setback_penalty,out_of_bounds_penalty,border_penalty,population_size,generations,mutation_rate,mutation_spread_m,immigration_rate,tournament_size,random_seed,num_turbines,min_spacing_m,border_setback_m,noise_limit_dba,scenario_count
+19382.63640134693,19807.692623519284,36.095481540544796,0.0,0.0,0.0,0.0,100,50,0.35,100.0,0.3,4,42,4,378.0,200.0,35.0,9

@@ -33,6 +33,7 @@ Thumbs.db
 # GA / validation temporary runs
 temp/
 tmp/
+openfast_verification/
 
 # Report stuff
 report/*
