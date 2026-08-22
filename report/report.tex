@@ -37,6 +37,10 @@
 \usepackage{booktabs}
 \usepackage{array}
 
+\usepackage{subcaption}
+
+\usepackage{graphicx}
+
 \usepackage{fancyhdr}
 
 % Header/footer style
@@ -201,23 +205,11 @@ The combination of wake interactions, changing environmental conditions, and spa
 
 \subsection{OpenFAST and FAST.Farm}
 
-% OpenFAST
-% - What OpenFAST is
-% - NREL-developed wind-turbine simulation framework
-% - Individual turbine simulation
-% - Relevant modules used in this project:
-%       AeroDyn
-%       AeroAcoustics
-% - Ability to calculate quantities such as generator power
-%
-% FAST.Farm
-% - Extension/framework for wind-farm simulations
-% - Multiple OpenFAST turbine instances
-% - Wake interactions between turbines
-% - Why it provides higher-fidelity validation for this project
-%
-% Do NOT describe your exact validation procedure here.
-% That belongs in Methodology.
+OpenFAST is an open-source wind-turbine simulation framework developed from the earlier FAST v8 (Fatigue, Aerodynamics, Structures, and Turbulence) software originally developed by NREL\footnote{The National Renewable Energy Laboratory (NREL) was renamed the National Laboratory of the Rockies (NLR) in 2025. Historical names are retained throughout this report when referring to work developed or published under NREL.}. It operates as a modular ``glue-code'' framework, coupling specialized models for aerodynamics, structural dynamics, control systems, hydrodynamics, and other physical processes to perform time-domain aero-hydro-servo-elastic simulations.
+
+FAST.Farm extends OpenFAST from individual turbines to wind-farm-level simulation. Each turbine is represented by an OpenFAST instance, while FAST.Farm models the wake interactions between turbines and the surrounding wind-field dynamics. Energy extracted by an upstream turbine produces a wake characterized by reduced wind speed and increased turbulence, which can alter the inflow and resulting performance of downstream turbines.
+
+This higher level of physical modeling allows FAST.Farm and OpenFAST to predict time-varying turbine quantities such as generator power while accounting for farm-level wake interactions. OpenFAST also includes an AeroAcoustics model within AeroDyn for predicting aerodynamic noise at specified observer locations. These capabilities make the OpenFAST and FAST.Farm framework suitable as the higher-fidelity simulation basis used in this study.
 
 
 % ------------------------------------------------------------
@@ -226,14 +218,9 @@ The combination of wake interactions, changing environmental conditions, and spa
 
 \subsection{FLORIS}
 
-% - What FLORIS is
-% - Reduced-order wind-farm wake modeling
-% - Effective/waked turbine wind speeds
-% - Farm/turbine power prediction
-% - Much lower computational cost than FAST.Farm
-% - Why reduced-order models are useful for optimization
-%
-% Don't discuss your exact parallel implementation or GA usage yet.
+FLORIS (FLOw Redirection and Induction in Steady State) is an open-source, reduced-order wind-farm modeling framework developed by NREL. It uses computationally efficient engineering wake models to estimate steady-state wake interactions, turbine inflow velocities, and power production for a specified wind-farm layout and inflow condition.
+
+Compared with time-domain simulation using FAST.Farm and OpenFAST, FLORIS can evaluate wind-farm conditions at substantially lower computational cost. This makes it suitable for repeated evaluations within an optimization algorithm, while higher-fidelity simulations can be reserved for validation.
 
 
 % ------------------------------------------------------------
@@ -242,7 +229,7 @@ The combination of wake interactions, changing environmental conditions, and spa
 
 \subsection{NREL 5-MW Reference Wind Turbine}
 
-The NREL 5-MW Reference Wind Turbine is a hypothetical, standardized 5-MW baseline turbine developed by the National Renewable Energy Laboratory (NREL), now known as the National Laboratory of the Rockies (NLR), primarily to support offshore wind-energy research and the development and comparison of wind-turbine simulation tools.
+The NREL 5-MW Reference Wind Turbine is a hypothetical, standardized 5-MW baseline turbine developed by the NREL, primarily to support offshore wind-energy research and the development and comparison of wind-turbine simulation tools.
 
 Although originally developed for offshore system research, the reference model also includes a onshore configuration. The fundamental turbine design is retained across these configurations, while the support structure is adapted for different applications. The onshore configuration uses a tower cantilevered directly to a concrete foundation, whereas offshore configurations have been developed using support structures such as monopiles, space frames, and floating platforms.
 
@@ -274,20 +261,17 @@ The onshore configuration was selected because this study considers aeroacoustic
 
 \subsection{Aeroacoustic Modeling}
 
-% General sources of wind-turbine aerodynamic noise
-% - Blade-generated aerodynamic noise
-% - Dependence on wind speed
-% - Dependence on observer position/direction
-% - Sound propagation with distance
-%
-% OpenFAST AeroDyn AeroAcoustics
-% - What the AeroAcoustics module predicts
-% - Observers
-% - Relevant outputs
-% - Possibly briefly introduce Amiet/turbulent-inflow noise
-%
-% Keep TIMod=1 vs TIMod=2 choice in Methodology, not here.
+Wind turbines generate sound through both mechanical and aerodynamic mechanisms. For modern utility-scale turbines, aerodynamic noise produced by the interaction between the rotating blades and the surrounding airflow is an important component of the overall acoustic emission. The resulting sound depends on turbine operating conditions, blade aerodynamics, incoming flow conditions, and the position of the acoustic observer relative to the turbine.
 
+It is important to note that due to the relative strengths of the noise outputs, OpenFAST only computes the noise produced through aerodynamic mechanisms, ignoring the noise generated from the internal components, such as the drivetrain or gearbox. The former produces a type of noise called Amplitude-Modulated Broadband Aerodynamic Noise, which can be described as a ``whooshing,'' ``swishing,'' or ``cyclic swooshing'' noise that covers the whole broadband spectrum. The latter however, can be approximated as a tonal sound, which has a distinct pitch, similar to a music note. 
+
+Several aerodynamic mechanisms can contribute to wind-turbine noise, including turbulent-inflow noise and airfoil self-noise. Turbulent-inflow noise results from atmospheric turbulence interacting with the blade, whereas self-noise is associated with interactions between the blade boundary layer and the surrounding flow. A major component of this self-noise includes tip vortex noise, which is generated by turbulent pressure fluctuations at the outermost blade tip. Because these mechanisms depend on local blade and flow conditions, the resulting acoustic field can vary with both wind speed and observer direction.
+
+OpenFAST provides aeroacoustic modeling through the AeroAcoustics functionality of AeroDyn. The model uses the aerodynamic state of the turbine to estimate sound pressure levels at specified observer locations and can represent multiple aerodynamic noise mechanisms. This allows turbine aeroacoustic behavior to be evaluated alongside the underlying aerodynamic simulation.
+
+As mentioned before, the AeroAcoustics model is specifically concerned with aerodynamic noise generated by the turbine blades. Mechanical noise sources, such as tonal components originating from the generator or drivetrain, are not modeled by the AeroAcoustics functionality considered in this study. Because AeroAcoustics is implemented within AeroDyn, its scope is the prediction of aerodynamically generated noise rather than mechanical noise sources associated with components such as the generator or drivetrain.
+
+For turbulent-inflow noise, AeroDyn provides formulations based on the Amiet model as well as an option incorporating the Simplified Guidati model. The specific turbulent-inflow model and AeroAcoustics configuration used in this study are described later in the methodology.
 
 % ------------------------------------------------------------
 % 2.5 Decibels and A-Weighting
@@ -296,25 +280,100 @@ The onshore configuration was selected because this study considers aeroacoustic
 \subsection{Decibels and A-Weighting}
 \label{ssec:db_a}
 
-% - Sound pressure level and logarithmic dB scale
-% - Why dB values cannot simply be added arithmetically
-% - A-weighting and dBA
-% - Why A-weighting is useful for human-perceived environmental noise
-%
-% Important equations worth introducing here:
-%
-%   L = 10 log10(I/I0)
-%
-% Energetic combination:
-%
-%   L_total = 10 log10(sum_i 10^(L_i/10))
-%
-% Equivalent/energetic mean:
-%
-%   L_eq = 10 log10((1/N) sum_i 10^(L_i/10))
-%
-% Then Methodology can reference this section instead of
-% re-explaining why energetic aggregation is required.
+Sound levels are commonly expressed in decibels (dB), a logarithmic measure of acoustic intensity relative to a reference value. For an acoustic intensity $I$ and reference intensity $I_0$, the sound level can be expressed as
+
+\begin{equation}
+    L
+    =
+    10\log_{10}
+    \left(
+        \frac{I}{I_0}
+    \right).
+    \label{eq:decibel-definition}
+\end{equation}
+
+Because the decibel scale is logarithmic, sound levels from independent sources cannot be combined through ordinary arithmetic addition. Instead, the individual levels must first be converted to the linear acoustic-energy domain. For $N$ independent sound contributions, the combined level is
+
+\begin{equation}
+    L_{\mathrm{total}}
+    =
+    10\log_{10}
+    \left(
+        \sum_{i=1}^{N}
+        10^{L_i/10}
+    \right).
+    \label{eq:energetic-sum}
+\end{equation}
+
+Similarly, a time-varying sequence of sound levels can be represented by an equivalent energetic mean,
+
+\begin{equation}
+    L_{\mathrm{eq}}
+    =
+    10\log_{10}
+    \left(
+        \frac{1}{T}
+        \sum_{t=1}^{T}
+        10^{L_t/10}
+    \right),
+    \label{eq:energetic-mean}
+\end{equation}
+
+where $T$ is the number of samples being averaged.
+
+\paragraph{A-weighting}
+
+Human hearing does not have equal sensitivity at all frequencies. A-weighting applies a frequency-dependent weighting intended to approximate the relative sensitivity of human hearing, with the resulting sound level reported in A-weighted decibels (dBA). A-weighted sound levels are commonly used when evaluating environmental and community noise because they provide a single-number measure that accounts for this frequency-dependent sensitivity.
+
+IEC~61672-1 defines the A-weighting response using the function
+
+\begin{equation}
+R_A(f)
+=
+\frac{
+    f_4^2 f^4
+}{
+    (f^2+f_1^2)
+    \sqrt{f^2+f_2^2}
+    \sqrt{f^2+f_3^2}
+    (f^2+f_4^2)
+},
+\label{eq:a-weighting-response}
+\end{equation}
+
+where
+
+\begin{equation}
+    f_1 = 20.6~\mathrm{Hz}, \qquad
+    f_2 = 107.7~\mathrm{Hz}, \qquad
+    f_3 = 737.9~\mathrm{Hz}, \qquad
+    f_4 = 12194~\mathrm{Hz}.
+\end{equation}
+
+The corresponding A-weighting correction in decibels is
+
+\begin{equation}
+A(f)
+=
+20\log_{10}\left[R_A(f)\right]
++ 2.00,
+\label{eq:a-weighting-correction}
+\end{equation}
+
+where the $2.00$~dB normalization produces an A-weighting correction of approximately 0~dB at 1~kHz.
+
+For an unweighted sound-pressure level $L(f)$ at frequency $f$, the A-weighted sound-pressure level is therefore
+
+\begin{equation}
+    L_A(f)
+    =
+    L(f) + A(f).
+\label{eq:dba-conversion}
+\end{equation}
+
+The resulting level is expressed in A-weighted decibels (dBA).
+
+The distinction between logarithmic and linear acoustic quantities is particularly important when considering a wind farm containing multiple turbines. The acoustic contribution from each turbine must be combined in the linear energy domain before being converted back to dBA. The same principle applies when reducing time-varying acoustic predictions to an equivalent steady-state value.
 
 
 % ------------------------------------------------------------
@@ -323,18 +382,64 @@ The onshore configuration was selected because this study considers aeroacoustic
 
 \subsection{Surrogate Modeling}
 
-% I WOULD ADD THIS SECTION.
-%
-% - What a surrogate model is
-% - Replacing expensive simulations with inexpensive approximations
-% - Training from higher-fidelity simulation data
-% - Inputs -> surrogate -> predicted response
-% - Accuracy vs computational-cost tradeoff
-% - Why surrogate models are useful when an optimizer needs
-%   thousands/millions of evaluations
-%
-% Don't discuss your 15,488 samples, feature sets, or winning ML model.
-% Those are Methodology/Results.
+High-fidelity numerical simulations can provide detailed representations of complex physical systems, but their computational cost may make them impractical for applications requiring a large number of repeated evaluations. Surrogate modeling addresses this problem by constructing a computationally inexpensive approximation of a more expensive underlying model.
+
+A surrogate model learns or approximates the relationship between a set of input variables and the corresponding outputs of the original model. For a computational model represented generally as
+
+\begin{equation}
+    \mathbf{y} = f(\mathbf{x}),
+\end{equation}
+
+a surrogate constructs an approximation
+
+\begin{equation}
+    \hat{\mathbf{y}} = \hat{f}(\mathbf{x}),
+\end{equation}
+
+where $\hat{f}$ is designed to reproduce the behavior of $f$ at a substantially lower computational cost. The surrogate may be constructed using methods such as interpolation, regression, or machine-learning algorithms trained on data generated by the original model.
+
+Surrogate models are particularly useful in optimization. Population-based optimization algorithms may require thousands of evaluations of candidate solutions, making direct evaluation with a high-fidelity simulation computationally expensive. A surrogate can instead be evaluated repeatedly during the optimization while the higher-fidelity model is reserved for training, verification, or final validation.
+
+This reduction in computational cost introduces a tradeoff in accuracy. A surrogate is only an approximation of the underlying model and its reliability depends on factors such as the quality and coverage of its training data, the selected input representation, and the predictive capability of the surrogate model. Consequently, surrogate predictions should be evaluated against the higher-fidelity model they are intended to approximate.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{tikzpicture}[
+        node distance=1.7cm,
+        box/.style={
+            draw,
+            rounded corners,
+            minimum width=3.2cm,
+            minimum height=1cm,
+            align=center
+        },
+        >=stealth
+    ]
+
+    \node[box] (input) {Input Parameters\\$\mathbf{x}$};
+
+    \node[box, right=of input] (high) {
+        High-Fidelity Model\\$f(\mathbf{x})$
+    };
+
+    \node[box, right=of high] (data) {
+        Training Data\\$(\mathbf{x},\mathbf{y})$
+    };
+
+    \node[box, below=of high] (surrogate) {
+        Surrogate Model\\$\hat{f}(\mathbf{x})$
+    };
+
+    \draw[->] (input) -- (high);
+    \draw[->] (high) -- (data);
+    \draw[->] (data) -- (surrogate);
+
+    \end{tikzpicture}
+
+    \caption{General concept of constructing a surrogate model from
+    high-fidelity simulation data.}
+    \label{fig:surrogate-concept}
+\end{figure}
 
 
 % ------------------------------------------------------------
@@ -343,19 +448,21 @@ The onshore configuration was selected because this study considers aeroacoustic
 
 \subsection{Genetic Algorithms}
 
-% - Population-based, derivative-free optimization
-% - Chromosomes / candidate solutions
-% - Fitness
-% - Selection
-% - Crossover
-% - Mutation
-% - Elitism
-% - Exploration vs exploitation
-% - Why GAs are suitable for complex wind-farm layout problems
-%
-% Keep YOUR population=100, mutation=0.35, immigration=0.40,
-% etc. in Methodology.
+Genetic algorithms (GAs) are population-based optimization methods inspired by the processes of biological evolution. Rather than improving a single candidate solution, a genetic algorithm maintains a population of candidate solutions and iteratively evolves that population toward regions of higher fitness. GAs are derivative-free, meaning that they do not require an analytical gradient of the objective function. For this reason, GAs can be referred to as a type of ``blind search.''
 
+Each candidate solution is represented by a \textit{chromosome}, whose parameters encode a possible solution to the optimization problem. A collection of chromosomes forms a \textit{population}. Each chromosome is evaluated using a fitness function,
+
+\begin{equation}
+    F = f(\mathbf{C}),
+\end{equation}
+
+where $\mathbf{C}$ represents a chromosome and $F$ is a scalar measure of the quality of that candidate solution. The definition of fitness is problem dependent and may incorporate both the optimization objective and penalties associated with constraint violations.
+
+After fitness evaluation, genetic operators are used to construct a new generation. \textit{Selection} favors higher-fitness chromosomes for reproduction, while \textit{crossover} combines information from multiple parents to produce new offspring. \textit{Mutation} introduces random changes to chromosomes, allowing new regions of the search space to be explored. GAs can also exhibit traits such as \textit{elitism}, in which one or more of the highest-performing chromosomes are transferred directly to the next generation and \textit{immigration}, where a bottom portion of the population is thrown out and randomly regenerated.
+
+Through repeated evaluation and reproduction, selection tends to exploit promising regions of the search space, while crossover and mutation maintain the ability to explore alternative solutions. The process continues until a termination criterion is reached, such as a maximum number of generations, convergence of the population, or attainment of a desired fitness.
+
+The blindness of GAs is particularly useful for problems in which the objective function is nonlinear, discontinuous, difficult to differentiate, or evaluated through external numerical models. Their population-based nature also makes them suitable for spatial optimization problems containing multiple interacting design variables and constraints.
 
 % ============================================================
 % 3. Methodology
@@ -367,13 +474,13 @@ The onshore configuration was selected because this study considers aeroacoustic
 
 The optimization framework developed in this study consists of two key components: FLORIS and a custom machine-learning predictor for the steady-state aeroacoustic output of each turbine at a given receiver location. These computationally efficient approximators avoid the time and computational costs associated with repeatedly running OpenFAST, making them suitable for use within the genetic algorithm. However, they are not intended to serve as a complete replacement for a higher-fidelity simulation. For this reason, a final OpenFAST/FAST.Farm validation step is included.
 
-During the optimization stage, a genetic algorithm evaluates candidate turbine layouts using FLORIS and the machine-learning aeroacoustic surrogate model. On the first iteration, candidates, also referred to as chromosomes, are generated from a uniform random distribution within the constraints of the land plot. FLORIS is used to estimate wake interactions, effective turbine wind speeds at the hub, and overall farm power production for each candidate. The effective turbine wind speeds are then supplied to the aeroacoustic surrogate along with the candidate layouts to estimate the A-weighted sound level at each receiver per turbine per candidate.
+During the optimization stage, a genetic algorithm evaluates candidate turbine layouts using FLORIS and the machine-learning aeroacoustic surrogate model. On the first iteration, chromosomes are generated from a uniform random distribution within the constraints of the land plot. FLORIS is used to estimate wake interactions, effective turbine wind speeds at the hub, and overall farm power production for each candidate. The effective turbine wind speeds are then supplied to the aeroacoustic surrogate along with the candidate layouts to estimate the A-weighted sound level at each receiver per turbine per candidate.
 
 The outputs of these models are incorporated into the genetic algorithm by providing information to calculate candidate fitness. The fitness function takes into account power production, as well as turbine-spacing, farm-boundary, and aeroacoustic constraints to output a single float metric. To evaluate candidates under a range of operating conditions, each generation is evaluated across a set of weighted wind-speed and wind-direction scenarios.
 
 After each generation, chromosomes are selected based on fitness and used to produce the subsequent generation through crossover and random mutation. A portion of the lowest-performing population is replaced with newly generated random candidates to maintain population diversity, while the highest-performing candidate is retained through elitism. The specific genetic operators and optimization parameters are described in greater detail in the following sections.
 
-Once the genetic algorithm reaches its termination criterion, currently defined as a fixed number of generations, the highest-performing candidate is evaluated using OpenFAST/FAST.Farm. The resulting higher-fidelity aeroacoustic predictions are then used to recalculate the candidate's acoustic performance and fitness and to evaluate the agreement between the surrogate-based optimization and the OpenFAST validation.
+Once the genetic algorithm reaches its termination criterion, currently defined as a fixed number of generations, the highest-performing candidate is evaluated using OpenFAST/FAST.Farm. The resulting higher-fidelity aeroacoustic predictions and power outputs are then used to recalculate the candidate's acoustic performance and fitness and to evaluate the agreement between the surrogate-based optimization and the OpenFAST validation.
 
 % Example figure
 \begin{figure}[htbp]
@@ -548,6 +655,7 @@ Once the genetic algorithm reaches its termination criterion, currently defined 
 \end{figure}
 
 \subsection{Aeroacoustic Surrogate Model}
+\label{ssec:aa-surrogate-model}
 
 Repeated OpenFAST aeroacoustics simulations are computationally impractical within the genetic algorithm, where many candidate layouts must be evaluated across multiple wind conditions during each generation. A machine-learning surrogate was therefore developed to approximate the steady-state A-weighted sound level produced by an individual turbine at an arbitrary receiver location.
 
@@ -623,7 +731,7 @@ This approach captured the strong directional variation absent from the initial 
 These observations motivated the final data-driven approach. Rather than interpolating only over wind speed and azimuth while prescribing the distance dependence analytically, the subsequent surrogate was trained to learn the joint relationship between wind speed, observer distance,
 observer direction, and A-weighted sound level directly from OpenFAST aeroacoustics data. A larger, homogeneous dataset was therefore generated for machine-learning model development, as described in the following sections.
 
-It should be noted that this preliminary implementation averaged decibel values directly in the logarithmic domain. The later OpenFAST validation methodology instead uses energetic averaging, as described in Section~\ref{sssec:aa-aggregation}.
+It should be noted that this preliminary implementation averaged decibel values directly in the logarithmic domain. The later OpenFAST validation methodology instead uses energetic averaging, as described in Section~\ref{ssec:db_a}.
 
 \subsubsection{Aeroacoustic Training Data}
 
@@ -879,8 +987,7 @@ Table~\ref{tab:aa-training-data} summarizes the sampling strategy.
     ]
     at (0,-5.6)
     {
-        Schematic only:
-        radial spacing is logarithmic from 100--1000 m
+        Schematic only: blue radial spacing is logarithmic from 100--1000 m
     };
 
     \end{tikzpicture}
@@ -896,6 +1003,9 @@ Table~\ref{tab:aa-training-data} summarizes the sampling strategy.
 
 \end{figure}
 
+\paragraph{Train--Test Split}
+
+The complete aeroacoustic dataset was randomly divided into an 80/20 training--test split. The training set, containing 80\% of the samples, was used to fit each model--feature-set combination, while the remaining 20\% was held out from training and used to evaluate model performance. MAE, RMSE, and $R^2$ were calculated exclusively on this held-out test set to evaluate each model's ability to generalize to unseen samples. The model did not recieve any input on its performance on the test split during training. All the information and figures compiled in Section~\ref{ssec:surrogate-results} were based on the model's performance on the test split.
 
 \subsubsection{Candidate Feature Representations}
 
@@ -1056,9 +1166,16 @@ candidate model configurations.
 
 The dataset was divided into training and testing subsets using an 80/20 split. The same split was used for all model and feature-set combinations to provide a consistent basis for comparison.
 
-Predictive performance was evaluated primarily using mean absolute error (MAE) and root mean squared error (RMSE), between the A-weighted sound level obtained from OpenFAST aeroacoustics, $L_i$, and the corresponding surrogate prediction $\hat{L}_i$. The coefficient of determination, $R^2$, was also calculated as an additional measure of model fit.
+Predictive performance was evaluated primarily using mean absolute error (MAE) and root mean squared error (RMSE), between the A-weighted sound level obtained from OpenFAST aeroacoustics, $L_i$, and the corresponding surrogate prediction $\hat{L}_i$. The coefficient of determination, $R^2$, was also calculated as an additional measure of model fit. The prediction residual for sample $i$ was defined as
 
-The final surrogate configuration was selected based on its performance on the held-out test data. The comparative results of the 35 candidate configurations are presented in Section~\ref{sec:surrogate-results}.
+\begin{equation}
+    e_i = y_i - \hat{y}_i,
+    \label{eq:residual}
+\end{equation}
+
+where $y_i$ is the OpenFAST AeroAcoustics value and $\hat{y}_i$ is the corresponding surrogate prediction. Thus, positive residuals represent underprediction by the surrogate and negative residuals represent overprediction.
+
+The final surrogate configuration was selected based on its performance on the held-out test data. The comparative results of the 35 candidate configurations are presented in Section~\ref{ssec:surrogate-results}.
 
 \subsubsection{Final Surrogate Implementation}
 
@@ -1093,36 +1210,7 @@ where $\hat{L}_{A}$ is the predicted A-weighted sound level.
 \subsubsection{Aeroacoustic Aggregation}
 \label{sssec:aa-aggregation}
 
-As mentioned in Section~\ref{ssec:db_a}, sound is measured on a logarithmic scale, not a linear scale. Thus, all operations on sets of dB readings must be done after converting to a power intermediary, and the output can be converted back to dB. For this reason, independent turbine noise contributions are combined in the linear acoustic-energy domain as such:
-
-\begin{equation}
-    L_{\mathrm{total}}
-    =
-    10 \log_{10}
-    \left(
-        \sum_{i=1}^{N}
-        10^{L_i/10}
-    \right),
-    \label{eq:openfast-acoustic-aggregation}
-\end{equation}
-
-modelling the energetic equivalent of the sum operation.
-
-Time-varying sound levels may similarly be reduced using
-
-\begin{equation}
-    L_{\mathrm{eq}}
-    =
-    10 \log_{10}
-    \left(
-        \frac{1}{T}
-        \sum_{t=1}^{T}
-        10^{L_t/10}
-    \right),
-    \label{eq:openfast-energetic-mean}
-\end{equation}
-
-modelling the energetic equivalent of the mean operation.
+As mentioned in Section~\ref{ssec:db_a}, sound is measured on a logarithmic scale, not a linear scale. Thus, all operations on sets of dB readings must be done after converting to a power intermediary, and the output can be converted back to dB. For this reason, independent turbine noise contributions are combined in the linear acoustic-energy domain using Equation~\ref{eq:energetic-sum}. Similarly, time-varying sound levels may similarly be reduced using Equation~\ref{eq:energetic-mean}.
 
 \subsection{Genetic Algorithm}
 
@@ -1665,9 +1753,9 @@ The same transformation is applied to both turbine and receiver coordinates, pre
 
 For each wind scenario, the aeroacoustics output from every turbine is read and reduced to its steady-state portion. The first half of each simulation output is discarded to reduce the influence of initialization and transient behavior, leaving the latter half for acoustic validation.
 
-Unlike the preliminary surrogate described previously, which used an arithmetic mean of the logarithmic sound levels, the validation workflow uses an energetic mean to reduce the time-varying A-weighted sound level. For a sequence of $T$ sound levels, this is calculated using Equation~\ref{eq:openfast-energetic-mean}.
+Unlike the preliminary surrogate described previously, which used an arithmetic mean of the logarithmic sound levels, the validation workflow uses an energetic mean to reduce the time-varying A-weighted sound level. For a sequence of $T$ sound levels, this is calculated using Equation~\ref{eq:energetic-mean}.
 
-Because aeroacoustics is evaluated independently for each turbine, the individual turbine contributions at a common receiver are subsequently combined in the acoustic-energy domain. For $N$ turbines, the mean A-weighted sound levels are aggregated using Equation~\ref{eq:openfast-acoustic-aggregation}, to produce a farm-level A-weighted sound level for each receiver and wind scenario.
+Because aeroacoustics is evaluated independently for each turbine, the individual turbine contributions at a common receiver are subsequently combined in the acoustic-energy domain. For $N$ turbines, the mean A-weighted sound levels are aggregated using Equation~\ref{eq:energetic-sum}, to produce a farm-level A-weighted sound level for each receiver and wind scenario.
 
 \subsubsection{Fitness Recalculation}
 
@@ -1737,7 +1825,7 @@ The turbine-spacing and boundary penalties are not recalculated from a different
     \label{eq:openfast-validated-fitness}
 \end{equation}
 
-This provides a higher-fidelity evaluation of the chromosome selected by the genetic algorithm, since both wake-dependent power production and aeroacoustic behavior are evaluated using the OpenFAST/FAST.Farm simulation framework. The resulting validation comparisons are presented in Section~\ref{ssec:validation-results}.
+This provides a higher-fidelity evaluation of the chromosome selected by the genetic algorithm, since both wake-dependent power production and aeroacoustic behavior are evaluated using the OpenFAST/FAST.Farm simulation framework.
 
 For diagnostic purposes, an additional surrogate validation basis is also calculated using the OpenFAST-derived power together with the machine-learning surrogate acoustic prediction,
 
@@ -1763,44 +1851,235 @@ Because Equations~\ref{eq:openfast-validated-fitness} and \ref{eq:surrogate-open
 \section{Results}
 
 \subsection{Surrogate Model Performance}
-\label{sec:surrogate-results}
+\label{ssec:surrogate-results}
 
-\lipsum[16]
-
-An example results table is shown in Table~\ref{tab:model-performance}.
+The 35 model--feature-set combinations described in Section~\ref{ssec:aa-surrogate-model} were evaluated on the same held-out test dataset. Table~\ref{tab:surrogate-best-models} reports the highest-performing feature representation for each regression model, ranked by RMSE.
 
 \begin{table}[htbp]
     \centering
-    \caption{Example surrogate model performance.}
-    \label{tab:model-performance}
+    \caption{Best-performing feature representation for each candidate
+    regression model.}
+    \label{tab:surrogate-best-models}
 
-    \begin{tabular}{lccc}
+    \begin{tabularx}{\textwidth}{
+        >{\raggedright\arraybackslash}X
+        l
+        r
+        r
+        r
+    }
         \toprule
-        Model & MAE (dBA) & RMSE (dBA) & $R^2$ \\
+        \textbf{Model}
+        & \textbf{Feature Set}
+        & \textbf{MAE (dBA)}
+        & \textbf{RMSE (dBA)}
+        & $\mathbf{R^2}$ (\%) \\
         \midrule
-        Model A & 0.10 & 0.15 & 0.999 \\
-        Model B & 0.15 & 0.22 & 0.997 \\
-        Model C & 0.20 & 0.28 & 0.995 \\
+
+        Histogram Gradient Boosting
+        & \texttt{polar\_log10\_r}
+        & 0.0922 & 0.1417 & 99.971 \\
+
+        XGBoost
+        & \texttt{polar\_log10\_r}
+        & 0.1026 & 0.1566 & 99.965 \\
+
+        Extra Trees
+        & \texttt{polar\_log10\_r}
+        & 0.0952 & 0.1593 & 99.963 \\
+
+        Random Forest
+        & \texttt{polar\_distance\_decay}
+        & 0.1718 & 0.2884 & 99.880 \\
+
+        Polynomial Ridge
+        & \texttt{polar\_distance\_decay}
+        & 2.0108 & 2.9321 & 87.578 \\
+
+        Ridge Regression
+        & \texttt{polar\_distance\_decay}
+        & 3.4931 & 4.8970 & 65.351 \\
+
+        Linear Regression
+        & \texttt{polar\_distance\_decay}
+        & 3.4931 & 4.8970 & 65.351 \\
+
         \bottomrule
-    \end{tabular}
+    \end{tabularx}
 \end{table}
 
+Histogram Gradient Boosting using the \texttt{polar\_log10\_r} feature representation achieved the lowest overall prediction error, with an MAE of 0.0922~dBA and an RMSE of 0.1417~dBA. The corresponding coefficient of determination was $R^2=99.971\%$, indicating that the model explained 99.971\% of the variation present in the held-out OpenFAST AeroAcoustics data.
+
+The other nonlinear tree-based methods also performed strongly. XGBoost and Extra Trees achieved minimum RMSE values of 0.1566~dBA and 0.1593~dBA, respectively, while the best Random Forest configuration produced an RMSE of 0.2884~dBA. Adding XGBoost to the candidate models therefore did not alter the final model selection.
+
+In contrast, the linear and polynomial models produced substantially larger errors. The best Polynomial Ridge configuration had an RMSE of 2.9321~dBA, while both Linear and Ridge Regression produced minimum RMSE values of approximately 4.897~dBA. This difference indicates that the relationship between wind speed, observer position, and the resulting aeroacoustic level could not be adequately represented by the simpler regression models considered here, as was suspected.
+
+\subsubsection{Extra Plots}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../dba_model_outputs/model_comparison_rmse.png}
+    \caption{RMSE of the candidate model--feature-set combinations evaluated on the held-out test dataset.}
+    \label{fig:model-comparison-rmse}
+\end{figure}
+
+The performance of the candidate model--feature-set combinations is shown in Figure~\ref{fig:model-comparison-rmse}. Histogram Gradient Boosting using the \texttt{polar\_log10\_r} feature representation achieved the lowest overall RMSE.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../dba_model_outputs/actual_vs_predicted.png}
+    \caption{Predicted A-weighted sound levels from the selected surrogate model compared with the corresponding OpenFAST AeroAcoustics values in the held-out test dataset.}
+    \label{fig:surrogate-parity}
+\end{figure}
+
+Figure~\ref{fig:surrogate-parity} compares the surrogate predictions against the corresponding OpenFAST AeroAcoustics values. The predictions closely follow the $1{:}1$ relationship across the range of sound levels, consistent with the low MAE and RMSE obtained by the selected model.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../dba_model_outputs/spatial_residual_map.png}
+    \caption{Spatial distribution of surrogate prediction residuals, defined as in Equation~\ref{eq:residual}.}
+    \label{fig:surrogate-spatial-residual}
+\end{figure}
+
+Figure~\ref{fig:surrogate-spatial-residual} displays the residuals at different locations around the singular turbine. The random variation with no detectable spatial pattern implies that the surrogate successfully captures the underlying physical trends, leaving only random noise and indicating no localized systematic bias relative to the OpenFAST training data.
 
 \subsection{Genetic Algorithm Performance}
+\label{ssec:ga-performance}
 
-\lipsum[17]
+The evolution of the genetic algorithm was evaluated using the saved generation-level fitness, power, aeroacoustic, and penalty metrics. These results provide insight into both the convergence behavior of the optimization and the relative influence of the different components of the fitness function.
+
+
+% ------------------------------------------------------------
+% Fitness by Generation
+% ------------------------------------------------------------
+
+Figure~\ref{fig:ga-fitness} shows the progression of fitness throughout the optimization. Although the mean population fitness increased steadily, the global-best fitness showed little improvement after approximately the seventh generation. This early plateau suggests that the GA may have converged prematurely and that further tuning of the genetic operators or their associated hyperparameters could improve exploration of the search space.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../ga_optimization_results/figures/ga_fitness_by_generation.png}
+    \caption{
+        Genetic-algorithm fitness as a function of generation, showing
+        the global-best fitness and mean population fitness.
+    }
+    \label{fig:ga-fitness}
+\end{figure}
+
+
+% ------------------------------------------------------------
+% Power by Generation
+% ------------------------------------------------------------
+
+Figure~\ref{fig:ga-power} shows a similar trend in expected farm power, with the global-best value plateauing early while the population mean continued to improve. The close correspondence between the power and fitness curves suggests that power production had a strong influence on the overall fitness. It may also indicate that the remaining fitness components provided relatively little differentiation among the highest-performing layouts.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../ga_optimization_results/figures/ga_power_by_generation.png}
+    \caption{
+        Expected farm power as a function of generation for the
+        global-best chromosome and population mean.
+    }
+    \label{fig:ga-power}
+\end{figure}
+
+
+% ------------------------------------------------------------
+% Noise by Generation
+% ------------------------------------------------------------
+
+Figure~\ref{fig:ga-noise} shows the corresponding maximum receiver sound level throughout the optimization. The global-best layout remained relatively constant in its acoustic performance, although a small reduction in predicted sound level occurred during the final generations. Overall, the limited variation suggests that aeroacoustic performance changed considerably less than power and fitness during the optimization. 
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../ga_optimization_results/figures/ga_noise_by_generation.png}
+    \caption{
+        Maximum predicted receiver A-weighted sound level as a function
+        of generation. The horizontal reference line indicates the
+        configured acoustic limit.
+    }
+    \label{fig:ga-noise}
+\end{figure}
+
+
+% ------------------------------------------------------------
+% Penalties by Generation
+% ------------------------------------------------------------
+
+Figure~\ref{fig:ga-penalties} shows the mean contribution of the individual constraint penalties across the population. Spacing violations accounted for the largest penalty throughout much of the optimization, substantially exceeding the contributions from the noise and boundary constraints. Initializing chromosomes with minimum-spacing constraints already satisfied could reduce this effect and allow the GA to devote more of its search to otherwise feasible layouts.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../ga_optimization_results/figures/ga_penalties_by_generation.png}
+    \caption{
+        Mean spacing, aeroacoustic, and boundary penalties across the
+        population as a function of generation.
+    }
+    \label{fig:ga-penalties}
+\end{figure}
 
 
 \subsection{Optimized Layout}
+\label{ssec:optimized-layout}
 
-\lipsum[18]
+The final optimized turbine arrangement produced by the genetic algorithm is shown in Figure~\ref{fig:optimized-layout}. A distinct anisotropy is visible in the resulting geometry: the turbines are positioned substantially closer to the transverse ($\pm y$) boundaries than to the co-directional ($\pm x$) boundaries.
 
+This behavior is consistent with the aeroacoustic directivity observed during preliminary OpenFAST AeroAcoustics testing. Across the tested wind speeds, sound levels were consistently greater in the $\pm x$ directions, approximately aligned with the wind-flow axis, than in the transverse $\pm y$ directions. The same spatial tendency was observed across repeated GA runs, in which turbine distances from the transverse boundaries were typically three to four times smaller than their distances from the co-directional boundaries. This repeated behavior indicates that the aeroacoustic constraint meaningfully influenced the spatial arrangement selected by the optimizer, rather than acting only as a scalar penalty on otherwise power-optimal layouts.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]
+        {../ga_optimization_results/figures/optimized_layout.png}
+    \caption{
+        Final wind-farm layout identified by the genetic algorithm.
+        Receiver shading represents the surrogate-predicted expected
+        A-weighted sound level.
+    }
+    \label{fig:optimized-layout}
+\end{figure}
 
 \subsection{OpenFAST Validation}
-\label{ssec:validation-results}
 
-\lipsum[19]
+Although FAST.Farm also provides higher-fidelity estimates of turbine power production, a detailed comparison between FAST.Farm and FLORIS power predictions is beyond the scope of this study. The validation presented here therefore focuses specifically on the performance of the aeroacoustic surrogate when applied to turbines operating under wake-affected wind-farm conditions.
 
+Figure~\ref{fig:validation-max-dba} compares the maximum receiver sound level predicted by the aeroacoustic surrogate with the corresponding OpenFAST AeroAcoustics result for each wind scenario. The surrogate consistently predicted higher maximum sound levels than OpenFAST. In particular, the surrogate placed the maximum receiver level above the 35~dBA noise limit for every validation scenario, whereas the OpenFAST results remained at or below the limit.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../openfast_validation_analysis/figures/maximum_receiver_dba_by_scenario.png}
+    \caption{Maximum receiver A-weighted sound level predicted by the aeroacoustic surrogate and OpenFAST AeroAcoustics for each validation wind scenario. The dashed line represents the 35~dBA noise limit.}
+    \label{fig:validation-max-dba}
+\end{figure}
+
+For the validation analysis, prediction error is defined as
+
+\begin{equation}
+    e_{\mathrm{validation}}
+    =
+    L_{\mathrm{surrogate}}
+    -
+    L_{\mathrm{OpenFAST}}.
+    \label{eq:validation-error}
+\end{equation}
+
+This sign convention differs from the residual definition used during surrogate model development, where residuals were defined as observed minus predicted. Under Equation~\ref{eq:validation-error}, positive values indicate that the surrogate predicts a higher sound level than OpenFAST, while negative values indicate surrogate underprediction.
+
+Figure~\ref{fig:validation-error-distribution} shows the distribution of receiver-level validation errors defined by Equation~\ref{eq:validation-error}. The distribution is shifted toward positive values, with a mean error of $+3.024$~dBA, indicating a systematic tendency for the surrogate to predict higher receiver sound levels than OpenFAST during the full wind-farm validation. This may be due to the fact that the surrogate model was not trained on waked wind, but rather steady wind, while FAST.Farm gives OpenFAST the full waked wind for use in AeroDyn and AeroAcoustics.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]
+        {../openfast_validation_analysis/figures/receiver_error_distribution.png}
+    \caption{Distribution of receiver-level validation errors, defined as $L_{\mathrm{surrogate}}-L_{\mathrm{OpenFAST}}$. Positive values indicate surrogate overprediction and negative values indicate surrogate underprediction.}
+    \label{fig:validation-error-distribution}
+\end{figure}
 
 % ============================================================
 % 5. Discussion
